@@ -25,7 +25,7 @@ library(RgoogleMaps)
 
 ## Merge (left_join) is cleaner and doesn't add/miss any GPS locations
 
-## Convert GPS to State using the GPS coordinates from the Site Identifier output and state shapefiles (polygons) <-- drops the GPS location on state shapefiles (polygons) and determines within which state the GPS location falls; Again, doesn't handle points near state boundaries well
+# Convert GPS to State using the GPS coordinates from the Site Identifier output and state shapefiles (polygons) <-- drops the GPS location on state shapefiles (polygons) and determines within which state the GPS location falls; Again, doesn't handle points near state boundaries well
 
 library(sp)
 library(maps)
