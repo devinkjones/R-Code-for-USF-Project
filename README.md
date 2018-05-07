@@ -5,10 +5,10 @@
 ## Original RCode (package: streamstats; version: 0.0.1.9011; see below) was modified to directly access StreamStats (communication between R and StreamStats wasn't working, so had to modify RCode with URL tools)
 
 + Package: streamstats
-Type: Package
-Title: R bindings to the USGS Streamstats API
-Version: 0.0.1.9011
-Authors@R: c(
++ Type: Package
++ Title: R bindings to the USGS Streamstats API
++ Version: 0.0.1.9011
++ Authors@R: c(
     person("Mark", "Hagemann", email = "mark.hagemann@gmail.com",
            role = c("aut", "cre")))
 Description: Functions for delineating, visualizing, computing statistics about
