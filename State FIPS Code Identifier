@@ -19,13 +19,13 @@ library(rgdal)
 library(rgeos)
 library(RgoogleMaps)
 
-## Convert GPS to State 
-
 ## Can do it this way, or merge StateFIPSCode in File 1 to File 2 with StateFIPSCode, StateName, StateAbbreviation
 
 ## Would suggest merging (left_join) with StateFIPS code document, as the GPS coordinate style doesn't handle points near state boundaries well <-- returns lots of 'NA' and you have to clean the data
 
 ## Merge (left_join) is cleaner and doesn't add/miss any GPS locations
+
+## Convert GPS to State using the GPS coordinates from the Site Identifier output and state shapefiles (polygons) <-- drops the GPS location on state shapefiles (polygons) and determines within which state the GPS location falls; Again, doesn't handle points near state boundaries well
 
 library(sp)
 library(maps)
