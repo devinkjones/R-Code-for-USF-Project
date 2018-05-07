@@ -1,8 +1,8 @@
-## File used to assign State (location) to the GPS units provided by the collection site identification data
++## File used to assign State (location) to the GPS units provided by the collection site identification data
 
-## Libraries used for streamstats extraction
++## Libraries used for streamstats extraction
 
-## install.packages prior to loading libraries
++## install.packages prior to loading libraries
 library(XML)
 library(RCurl)
 library(streamstats)
