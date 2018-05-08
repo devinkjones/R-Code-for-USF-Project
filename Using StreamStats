@@ -1,0 +1,119 @@
+## Information and RCode to extract data and shapefiles from the USGS StreamStats
+
+##### HAS TO BE UPDATED GIVEN STREAMSTATS V4 IS NOW OUT AND DEVTOOLS HAVE CHANGED URL CODES 
+##### THEREFORE, NO CODE HERE WILL WORK CURRENTLY
+
+## Obtain StateFIPS codes using other file located in the USGS-StreamStats-in-R Folder
+
+## Extracts data using StreamStats Service Documentation found (https://streamstats.usgs.gov/streamstatsservices/#/) 
+
+## Uses site data downloaded from the USGS/USEPA/USDA Water Quality Portal (https://www.waterqualitydata.us/portal/)
+
+## STEP 1: Obtain URL codes for each site using LongitudeMeasure, LatitudeMeasure, and StateAbb
+
+## Because the dataset has multiple rows of data for 5-6 variables (columns), we have to use the "row" as the repeated input (usually I for  a single box of a single column vector)
+## Gets the LongitudeMeasure for each row
+## Gets the LatitudeMeasure for each row
+## Gets the State for each row
+## Gets the StateCode (FIPS) for each row
+## Gets the MonitoringLocationIdentifier for each row
+## Have to use the [[1]] to get the value, otherwise, [1] will return more text and give you the format (i.e., A tibble: 1x1…)
+## Output shows table with each URL written; Have to remove "x" rows (can do this in excel), and then attach URLs to actual datasheet
+
+for (row in 1:nrow(datasetnameA)){
+  x <- datasetnameA[row, "LongitudeMeasure"]
+  y <- datasetnameA[row, "LatitudeMeasure"]
+  State <- datasetnameA[row, "State"]
+  StateCode <- datasetnameA[row, "StateCode"]
+  SiteID <- datasetnameA[row, "MonitoringLocationIdentifier"]
+  url <- "https://ssdev.cr.usgs.gov/streamstatsservices/watershed.xml?rcode=NY&xlocation=-74.524&ylocation=43.939&crs=4326&includeparameters=false&includeflowtypes=false&includefeatures=true&simplify=true"
+  url1 <- param_set(url, key = "xlocation", value = x[[1]])
+  url2 <- param_set(url1, key = "ylocation", value = y[[1]])
+  url3 <- param_set(url2, key = "rcode", value = State[[1]])
+  write.table(url3, "/Users/devinkjones/Desktop/URL.csv", append=TRUE)
+}
+
+## Will have to edit the 'Directory' in the 'write.table' function to place on different user's computer
+## Include 'append=TRUE' so each new line is added to the table, and does not overwrite the previous entry
+
+## STEP 2: Obtain WorkspaceID for each URL in the first step
+
+for(row in 1:nrow(datasetnameB)){
+  x <- datasetnameB[row, "URL"]
+  urlws <- getURL(x[[1]])
+  WorkID <- regmatches(urlws[[1]], gregexpr("(?<=<workspaceID>).*(?=</work)",urlws[[1]], perl = TRUE))
+  SiteFound <- regmatches(urlws[[1]], gregexpr("(?<= text-align:center\">).*(?=</div)",urlws[[1]], perl = TRUE))
+  Workspace <- WorkID[[1]]
+  Found <- SiteFound[[1]]
+  df <- cbind(Workspace, Found)
+  write.table(df, "/Users/devinkjones/Desktop/WorkspaceID.csv", append=TRUE, na="NA")
+}
+
+## STEP 3: Combine Site Data, URL output, and WorkspaceID 
+## For any WorkspaceID that isn't TRUE (or "URL not found), remove those sites from Excel file
+## Save reduced Excel file → load it back into R
+
+## STEP 4: Extract available basin characteristics for found WorkspaceIDs
+
+for(row in 1:nrow(datasetnameC)){
+  BasinURL <- datasetnameC[row,"BasinCharacterURL"]
+  WSID <- datasetnameC[row,"WorkspaceID"]
+  SiteID <- datasetnameC[row,"MonitoringLocationIdentifier"]
+  
+  AvailStats <- getURL(BasinURL[[1]])
+  StatsTree <- xmlParse(AvailStats[[1]])
+  
+  flatten_xml <- function(x) {
+    if (length(xmlChildren(x)) == 0) structure(list(xmlValue(x)), .Names = xmlName(xmlParent(x)))
+    else Reduce(append, lapply(xmlChildren(x), flatten_xml))
+  }
+  dfs <- lapply(getNodeSet(StatsTree,"//parameters/parameters/parameter"), function(x) data.frame(flatten_xml(x)))
+  allnames <- unique(c(lapply(dfs, colnames), recursive = TRUE))
+  df <- do.call(rbind, lapply(dfs, function(df) { df[, setdiff(allnames,colnames(df))] <- NA; df }))
+  
+  WorkspaceID <- c(WSID)
+  MonitoringSiteID <- c(SiteID)
+  newdf <- cbind(df, WorkspaceID, MonitoringSiteID)
+  newdf
+  
+  write.table(newdf, "/Users/devinkjones/Desktop/AvailStats.csv", sep = ",", col.names = T, append = T)
+}
+
+## STEP 5: Get shapefile for watershed
+
+## Use 'WorkspaceID' from above (STEP 2)
+## Have to use 'Binary' URL because R cannot grab shapefile from the url, but can download binary code <-- Don't worry, this works out and reads into shapefile just fine
+library(XML)
+library(RCurl)
+library(streamstats)
+library(urltools)
+library(utils)
+library(xml2)
+library(htmltools)
+library(htmlwidgets)
+library(httpcode)
+library(httpuv)
+library(httr)
+
+for(row in 1:nrow(TryGPS1)){
+WSID <- TryGPS1[row,"WorkspaceID"]
+urlshape <-"https://ssdev.cr.usgs.gov/streamstatsservices/download?workspaceID=NY20171207144139234000&format=SHAPE"
+urlshape1 <- param_set(urlshape, key = "workspaceID", value = WSID[[1]])
+bin <- getBinaryURL(urlshape1)
+
+## Write the directory for the file to be stored
+## 'open = "wb"' opens the file for writing in binary mode (i.e., opening the binary code you pulled down from the URL)
+con <- file("/Users/devinkjones/Desktop/ShapeFiles.zip", open = "wb")
+
+## Write the binary file (using the previously defined URL and file directory)
+writeBin(bin,con)
+
+## Close the binary connection (?maybe?)
+close(con)
+
+## Extract zipped files so they can be saved before overwritten
+## First “__(directory)__” is to where the .zip is located; 'exdir' is the directory where the extracted files are sent
+## Make sure folder for extracted files is set up BEFORE you send it to the location, or it won't function
+unzip("/Users/devinkjones/Desktop/ShapeFiles.zip", exdir = "/Users/devinkjones/Desktop/Extracted")
+}
+
