@@ -1,0 +1,24 @@
+## Creating combined 'Species' by 'MonitoringSite' lists
+
+## Libraries needed to complete merge
+library(reshape)
+library(reshape2)
+library(dbplyr)
+library(plyr)
+library(dplyr)
+
+## Set columns of interest to a dataframe
+Datasheet1 <- ("Columns of interest")
+Datasheet1
+
+## Reorganize the dataframe of interest to 'MonitoringSiteID' by 'Species/TaxonName' with the associated counts
+LocBySpecies <- dcast(Datasheet1, MonitoringSiteID ~ TaxonName, value.var = "Count")
+LocBySpecies
+
+## Merge the reorganized dataframe with the 'MonitoringSiteID' from the "Site Only" datafile containing the ID, GPS coords, etc.
+## Use the 'MonitoringSiteID' datafile as the "x" and the reorganized data as the "y"
+Combined <- left_join("MonitoringSiteID File", "LocBySpecies", by = "MonitoringSiteID")
+Combined
+
+## Results in combined datasets; For each 'MonitoringSiteID', you'll now have all species collected/ID'd associated with it
+## NA represents those species that are not found at that site
