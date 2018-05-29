@@ -1,0 +1,201 @@
+## Information and RCode to extract "Basin Characteristics" from the USGS StreamStats using Water Quality Portal Site Data 
+
+## Extracts data using StreamStats Service Documentation found (https://streamstats.usgs.gov/streamstatsservices/#/) 
+
+## Uses site data downloaded from the USGS/USEPA/USDA Water Quality Portal (https://www.waterqualitydata.us/portal/)
+
+## Cleaning USGS Station Data to obtain Site ID, GPS coords, and state and county FIPS codes, and corresponding basin characteristics
+
+## **STEP ONE**
+## Install/Load the following libraries
+
+library(urltools)
+library(openxlsx)
+library(RCurl)
+library(dplyr)
+library(clipr)
+library(httr)
+library(jsonlite)
+library(rJava)
+library(xlsx)
+library(magrittr)
+library(data.tree)
+library(reshape2)
+
+## **STEP TWO**
+## Download 'Site Data' from the National Water Quality Monitoring Council portal site (https://www.waterqualitydata.us/portal/)
+## Read-in csv file downloaded (Change "file/location" to wherever your 'Site Data' is located)
+
+Station <- read.csv("~/Desktop/WQP/station.csv")
+View(Station)
+
+## Get the column names and numbers for the site data
+
+names(Station)
+
+## Extract the columns of interest
+
+df1 <- select(Station, "OrganizationIdentifier", "OrganizationFormalName", "MonitoringLocationIdentifier", "MonitoringLocationName", "MonitoringLocationTypeName", "HUCEightDigitCode", "LongitudeMeasure", "LatitudeMeasure", "HorizontalCollectionMethodName", "HorizontalCoordinateReferenceSystemDatumName", "CountryCode", "StateCode", "CountyCode", "ProviderName")
+View(df1)
+
+## **STEP THREE**
+## Create dataframe for State FIPS codes, State abbreviations, and State names
+## Place State FIPS, abbreviations and names in dataframe
+## To do this, first, **_MANUALLY_** copy the below data to your clipboard (copy):
+
+FIPS	ABB	PolyName
+1	AL	Alabama
+4	AZ	Arizona
+5	AR	Arkansas
+6	CA	California
+8	CO	Colorado
+9	CT	Connecticut
+10	DE	Delaware
+11	DC	D.C.
+12	FL	Florida
+13	GA	Georgia
+16	ID	Idaho
+17	IL	Illinois
+18	IN	Indiana
+19	IA	Iowa
+20	KS	Kansas
+21	KY	Kentucky
+22	LA	Louisiana
+23	ME	Maine
+24	MD	Maryland
+25	MA	Massachusetts
+26	MI	Michigan
+27	MN	Minnesota
+28	MS	Mississippi
+29	MO	Missouri
+30	MT	Montana
+31	NE	Nebraska
+32	NV	Nevada
+33	NH	New Hampshire
+34	NJ	New Jersey
+35	NM	New Mexico
+36	NY	New York
+37	NC	North Carolina
+38	ND	North Dakota
+39	OH	Ohio
+40	OK	Oklahoma
+41	OR	Oregon
+42	PA	Pennsylvania
+44	RI	Rhode Island
+45	SC	South Carolina
+46	SD	South Dakota
+47	TN	Tennessee
+48	TX	Texas
+49	UT	Utah
+50	VT	Vermont
+51	VA	Virginia
+53	WA	Washington
+54	WV	West Virginia
+55	WI	Wisconsin
+56	WY	Wyoming
+
+## Then use 'clipr' package to "paste" as a data frame
+## Leave () blank due to it searching the system for what is on the clipboard
+
+StateFIPSdata <- read_clip_tbl()
+
+## **STEP FOUR**
+## Then combine the 'Site Data' file with the data frame containing the State FIPS codes, abbreviations, and names
+
+x3 <- left_join(df1, StateFIPSdata, by = c("StateCode" = "FIPS"))
+View(x3)
+
+## **_Skip this step when you're running the actual code. This is for practice and to reduce the number of sites._**
+**x3 <- x3[1:5,]**
+**View(x3)**
+
+## **STEP FOUR**
+## Obtain URL for each location to be used in the USGS "Delineate Watershed by Location" function in the Services Documentation
+## Gotta do a few things first
+## Label each variable you will be replacing in the URL with their own identifiers (i.e., x/y for Long/Lat, State abbreviations, etc.)
+## You will be replacing the 'rcode', 'xlocation', and 'ylocation' in each URL
+## param_set replaces 'parameters' in URL code and the 'key' is the wording (before the =) in the URL code to be changed
+## Code below builds one URL at a time, and replaces one 'parameter' at a time, building on the previous url code
+## Once we build each url, we 'cbind' to it the 'MonitoringLocationIdentifier' to keep it with the 'Site' it belongs (have to use 'as.character' because the 'SiteID' is a long factor with lots of levels; 'as.factor' selects the one of interest)
+## We also name the columns during the 'cbind' as 'URL' and 'MonitoringLocationIdentifier'
+## We then write a table that appends all lines without overwriting the previous (append = TRUE)
+## The 'write.table' option of 'col.names' is set to '!file.exists' as during the first run, R writes the column headers we named, but then doesn't rewrite them for each row added
+## **_NEED_** to include the 'quote = FALSE' option or else it'll be difficult to separate in the next step converting the .csv to a .xlsx file
+
+for (row in 1:nrow(x3)){
+  x <- x3[row, "LongitudeMeasure"]
+  y <- x3[row, "LatitudeMeasure"]
+  StateABB <- x3[row, "ABB"]
+  StateCode <- x3[row, "StateCode"]
+  SiteID <- x3[row,"MonitoringLocationIdentifier"]
+  url <- "https://streamstats.usgs.gov/streamstatsservices/watershed.json?rcode=NY&xlocation=-74.524&ylocation=43.939&crs=4326&includeparameters=true&includeflowtypes=false&includefeatures=true&simplify=true"
+  url1 <- param_set(url, key = "xlocation", value = x[[1]])
+  url2 <- param_set(url1, key = "ylocation", value = y[[1]])
+  url3 <- param_set(url2, key = "rcode", value = StateABB[[1]])
+  URLforSites <- cbind(URL = c(url3), MonitoringLocationIdentifier = c(as.character(SiteID)))
+  write.table(URLforSites, "/Users/devinkjones/Desktop/URL.csv", quote = FALSE, row.names = FALSE, append=TRUE, col.names = !file.exists("/Users/devinkjones/Desktop/URL.csv"))
+}
+
+## Then, we convert the .csv file to a .xlsx file with separate columns
+## We read it in with the 'sep = ""' command to separate columns in files with any "white space" (which is why we did the 'quote = FALSE' for the 'write.table' option)
+
+x4 <- read.csv("/Users/devinkjones/Desktop/URL.csv", header = TRUE, sep = "")
+write.xlsx(x4, "/Users/devinkjones/Desktop/URL.xlsx")
+
+## **STEP FIVE**
+## Then we can join the data set of the URLs to the 'Site Data' file
+## Below is the code for the shortened row example.. so you're gonna have to change it to the actual files once you create them
+
+x3 ##Shortened to only 5 monitoring locations, but includes all variables (e.g., Long, Lat, MonitoringLocationIdentifier)
+x4 ## File with the URL and monitoring locations
+
+x5 <- left_join(x3, x4, by = "MonitoringLocationIdentifier")
+View(x5)
+
+## Have to add in the StateFIPS codes and rCode (e.g., NY) for each StateFIPS (lost this somewhere, easy to just add it in)
+## Use 'by = c("StateCode" = "FIPS")' due to the FIPS codes being labeled differently in each
+
+x5 <- left_join(x5, StateFIPSdata, by = c("StateCode" = "FIPS"))
+
+## **STEP SIX**
+## Now we can find the 'WorkspaceID' and 'Basin Characteristics' for the USGS Services Documentation using the obtained URLs
+## First, set your URL and 'MonitoringLocationIdentifier' <- MonitoringLocationID is important so we can then join the output to the proper 'SiteData' file
+## 'getURL' function comes from the 'RCurl' library
+## 'gregexpr' function searches for the element in vectors (in this case, our returned .xml code from the URL output) and extracts what's between the identified code
+## We use 'quote=FALSE' and 'col.names=!file.exists("")' again the same as above; 'quote=FALSE' removes quotes for better split in the following code, and 'col.names=!file.exists' gives us one set of headers, and doesn't write headers for each row
+
+for(row in 1:nrow(x5)){
+  x <- x5[row,"URL"]
+  MonitoringLocationIdentifier <- x5[row,"MonitoringLocationIdentifier"]
+  urlws <- fromJSON(as.character(x[1]), simplifyVector = FALSE)
+  WorkspaceID <- urlws$workspaceID
+  CharNodes <- as.Node(urlws$parameters)
+  ColVariables <- CharNodes$fieldsAll
+  SiteDF <- ToDataFrameTree(CharNodes, "code", "description", "unit" , "value")
+  SiteDF1 <- SiteDF[-(1),]
+  SiteDF1 <- cbind(SiteDF1, MonitoringLocationIdentifier = c(MonitoringLocationIdentifier[1]), WorkspaceID = WorkspaceID)
+  write.table(SiteDF1, "/Users/devinkjones/Desktop/SiteData.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/SiteData.csv"), sep = "}")
+  Sys.sleep(15)
+}
+
+## Then, we convert the .csv file of the 'WorkspaceID' and 'Basin Characteristics' to a .xlsx file with separate columns
+## We read it in with the 'sep = "}" command to separate columns in files with any "}" (which is why we did the 'quote = FALSE' for the 'write.table' option and told is to use "}" instead)
+
+y1 <- read.csv("/Users/devinkjones/Desktop/SiteData.csv", header = TRUE, sep = "}")
+write.xlsx(y1, "/Users/devinkjones/Desktop/SiteData.xlsx", row.names = FALSE)
+
+## We can now arrange the dataframe so that each 'MonitoringLocationIdentifier' and 'WorkspaceID' has the reported "Basin Characteristics" as columns
+## Do this using 'reshape2' package and the 'dcast' function
+
+y2 <- dcast(y1, MonitoringLocationIdentifier + WorkspaceID ~ code, value.var = "value")
+View(y2)
+
+## We can now combine the 'WorkspaceID/Basin Characteristic' datafile with the main file branch with the ID, Long/Lat, Organization, etc. we've been adding to
+
+x6 <- left_join(x5, y2, by = "MonitoringLocationIdentifier")
+View(x6)
+
+## We can then write our datasheet to an Excel workbook
+## Remember to now keep the top column rows and change the file location and name
+
+write.xlsx(x6, "/Users/devinkjones/Desktop/Combined.xlsx", col.names = TRUE, row.names = FALSE)
