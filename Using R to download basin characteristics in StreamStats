@@ -45,6 +45,7 @@ View(df1)
 
 FIPS	ABB	PolyName
 1	AL	Alabama
+2 AK  Alaska
 4	AZ	Arizona
 5	AR	Arkansas
 6	CA	California
@@ -54,6 +55,7 @@ FIPS	ABB	PolyName
 11	DC	D.C.
 12	FL	Florida
 13	GA	Georgia
+15  HI  Hawaii
 16	ID	Idaho
 17	IL	Illinois
 18	IN	Indiana
@@ -93,6 +95,10 @@ FIPS	ABB	PolyName
 54	WV	West Virginia
 55	WI	Wisconsin
 56	WY	Wyoming
+60  AS  American Samoa
+66  GU  Guam
+72  PR  Puerto Rico
+78  VI  US Virgin Islands 
 
 ## Then use 'clipr' package to "paste" as a data frame
 ## Leave () blank due to it searching the system for what is on the clipboard
