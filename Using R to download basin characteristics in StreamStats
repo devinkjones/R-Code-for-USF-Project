@@ -98,7 +98,7 @@ FIPS	ABB	PolyName
 60  AS  American Samoa
 66  GU  Guam
 72  PR  Puerto Rico
-78  VI  US Virgin Islands 
+78  VI  US Virgin Islands
 
 ## Then use 'clipr' package to "paste" as a data frame
 ## Leave () blank due to it searching the system for what is on the clipboard
