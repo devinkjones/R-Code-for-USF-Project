@@ -22,6 +22,23 @@ library(magrittr)
 library(data.tree)
 library(reshape2)
 
+## **WARNING** IF "rJava" DOES NOT LOAD, DO (IF YOU'RE USING PC WITH WINDOWS 7 or 10):
+##Getting rJava to work depends heavily on your computers configuration:
+  
+##You have to use the same 32bit or 64bit version for both: R and JDK/JRE. A mixture of this will never work (at least for me).
+##If you use 64bit version make sure, that you do not set JAVA_HOME as a enviorment variable. If this variable is set, rJava will not work for whatever reason (at least for me). You can check easily within R is JAVA_HOME is set with
+
+Sys.getenv("JAVA_HOME")
+
+##If you need to have JAVA_HOME set (e.g. you need it for maven or something else), you could deactivate it within your R-session with the following code before loading rJava:
+  
+if (Sys.getenv("JAVA_HOME")!="")
+    Sys.setenv(JAVA_HOME="")
+library(rJava)
+
+##This should do the trick in most cases. Furthermore this will fix issue Using the rJava package on Win7 64 bit with R, too. I borrowed the idea of unsetting the enviorment variable from R: rJava package install failing.
+
+
 ## **STEP TWO**
 ## Download 'Site Data' from the National Water Quality Monitoring Council portal site (https://www.waterqualitydata.us/portal/)
 ## Read-in csv file downloaded (Change "file/location" to wherever your 'Site Data' is located)
@@ -45,7 +62,7 @@ View(df1)
 
 FIPS	ABB	PolyName
 1	AL	Alabama
-2 AK  Alaska
+2	AK	Alaska
 4	AZ	Arizona
 5	AR	Arkansas
 6	CA	California
@@ -55,7 +72,7 @@ FIPS	ABB	PolyName
 11	DC	D.C.
 12	FL	Florida
 13	GA	Georgia
-15  HI  Hawaii
+15	HI	Hawaii
 16	ID	Idaho
 17	IL	Illinois
 18	IN	Indiana
@@ -95,10 +112,10 @@ FIPS	ABB	PolyName
 54	WV	West Virginia
 55	WI	Wisconsin
 56	WY	Wyoming
-60  AS  American Samoa
-66  GU  Guam
-72  PR  Puerto Rico
-78  VI  US Virgin Islands
+60	AS	American Samoa
+66	GU	Guam
+72	PR	Puerto Rico
+78	VI	Virgin Islands
 
 ## Then use 'clipr' package to "paste" as a data frame
 ## Leave () blank due to it searching the system for what is on the clipboard
@@ -169,19 +186,21 @@ x5 <- left_join(x5, StateFIPSdata, by = c("StateCode" = "FIPS"))
 ## 'getURL' function comes from the 'RCurl' library
 ## 'gregexpr' function searches for the element in vectors (in this case, our returned .xml code from the URL output) and extracts what's between the identified code
 ## We use 'quote=FALSE' and 'col.names=!file.exists("")' again the same as above; 'quote=FALSE' removes quotes for better split in the following code, and 'col.names=!file.exists' gives us one set of headers, and doesn't write headers for each row
+## Added in the 'while'/'if'/'break' commands to try the URL repeatedly if the URL was kicked back instead of creating an error and stopping the whole code
 
 for(row in 1:nrow(x5)){
   x <- x5[row,"URL"]
   MonitoringLocationIdentifier <- x5[row,"MonitoringLocationIdentifier"]
-  urlws <- fromJSON(as.character(x[1]), simplifyVector = FALSE)
+  while(TRUE){
+    urlws <- try(fromJSON(as.character(x[1]), simplifyVector = FALSE), silent=TRUE)
+    if(!is(urlws, 'try-error')) break}
   WorkspaceID <- urlws$workspaceID
   CharNodes <- as.Node(urlws$parameters)
   ColVariables <- CharNodes$fieldsAll
   SiteDF <- ToDataFrameTree(CharNodes, "code", "description", "unit" , "value")
   SiteDF1 <- SiteDF[-(1),]
   SiteDF1 <- cbind(SiteDF1, MonitoringLocationIdentifier = c(MonitoringLocationIdentifier[1]), WorkspaceID = WorkspaceID)
-  write.table(SiteDF1, "/Users/devinkjones/Desktop/SiteData.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/SiteData.csv"), sep = "}")
-  Sys.sleep(15)
+  write.table(SiteDF1, "C:/Users/dkjones/Desktop/SiteDataTry.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("C:/Users/dkjones/Desktop/SiteDataTry.csv"), sep = "}")
 }
 
 ## Then, we convert the .csv file of the 'WorkspaceID' and 'Basin Characteristics' to a .xlsx file with separate columns
