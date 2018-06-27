@@ -1,0 +1,171 @@
+##Install 'taxize'
+install.packages("taxize")
+install.packages("rJava")
+install.packages("xlsx")
+install.packages("plyr")
+install.packages("dplyr")
+install.packages("dbplyr")
+install.packages("reshape2")
+
+## Load 'taxize'
+library(taxize)
+library(rJava)
+library(xlsx)
+library(plyr)
+library(dplyr)
+library(dbplyr)
+library(reshape2)
+
+------
+## There is a known communication issue when trying to load in 'rJava' with the updated R versions
+## TO LOAD 'rJava' correctly (on MAC) so that it communicates with R and Java, you have to reconfigure the settings
+## Have to open 'Terminal' and type 'R CMD javareconf'
+## This will locate the updated version of Java to load in to R, and give you the options to override the conf and load paths (yes to both)
+
+##"Last login: Tue Jun 19 12:41:53 on ttys000
+##USF-Gold-Wifi-226-37-179:~ devinkjones$ R CMD javareconf
+##Java interpreter : /usr/bin/java
+##Java version     : 10.0.1
+##Java home path   : /Library/Java/JavaVirtualMachines/jdk-10.0.1.jdk/Contents/Home
+##Java compiler    : /usr/bin/javac
+##Java headers gen.: /usr/bin/javah
+##Java archive tool: /usr/bin/jar
+
+##trying to compile and link a JNI program 
+##detected JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+##detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+##clang -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG -I/Library/Java/JavaVirtualMachines/jdk-10.0.1.jdk/Contents/Home/include -I/Library/Java/JavaVirtualMachines/jdk-10.0.1.jdk/Contents/Home/include/darwin  -I/usr/local/include   -fPIC  -Wall -g -O2  -c conftest.c -o conftest.o
+##clang -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o conftest.so conftest.o -L/Library/Java/JavaVirtualMachines/jdk-10.0.1.jdk/Contents/Home/lib/server -ljvm -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+
+##JAVA_HOME        : /Library/Java/JavaVirtualMachines/jdk-10.0.1.jdk/Contents/Home
+##Java library path: $(JAVA_HOME)/lib/server
+##JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+##JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+##Updating Java configuration in /Library/Frameworks/R.framework/Resources
+##override rw-r--r--  root/admin for /Library/Frameworks/R.framework/Resources/etc/Makeconf? (y/n [n]) y
+##override rw-r--r--  root/admin for /Library/Frameworks/R.framework/Resources/etc/ldpaths? (y/n [n]) y
+##Done."
+
+## SEE https://github.com/s-u/rJava/issues/151 for clarification on why to choose this route over changing "JAVA_HOME"
+-----
+
+## Read in dataset
+Species <- read.csv("/Users/devinkjones/Desktop/WQP/NAWQA/NY/biologicalresult.csv")
+View(Species)
+
+## Obtain header names for the Species dataset
+names(Species)
+
+## Extract the columns of interest and combine them in a new dataframe
+df1 <- select(Species, "OrganizationIdentifier", "ActivityIdentifier", "ActivityStartDate", "ProjectIdentifier", "MonitoringLocationIdentifier", "AssemblageSampledName", "SampleCollectionMethod.MethodIdentifier", "SampleCollectionMethod.MethodIdentifierContext", "SampleCollectionMethod.MethodName", "SampleCollectionMethod.MethodDescriptionText", "SampleCollectionEquipmentName", "CharacteristicName", "ResultMeasureValue", "ResultMeasure.MeasureUnitCode", "ResultStatusIdentifier", "ResultValueTypeName", "BiologicalIntentName", "SubjectTaxonomicName", "ProviderName")
+View(df1)
+
+## Extract unique species identities from database
+## unique("Database$ColumnHeader", fromLast = TRUE)
+x1 <- unique(df1$SubjectTaxonomicName, fromLast=TRUE)
+
+## Clean the names with the "***retired***use" recommended names
+## Create table with original "Input_Name" and "Use_Name" 
+for(i in x1){
+    Input_Name <- i
+    Use_Name <- sub('.*use ', '', i)
+    x2 <- cbind(Input_Name, Use_Name)
+    as.data.frame(x2)
+    colnames(x2) <- c("Input_Name", "Use_Name")
+    write.table(x2, "/Users/devinkjones/Desktop/Clean.csv", sep = ".", row.names = FALSE, append = TRUE, col.names = !file.exists("/Users/devinkjones/Desktop/Clean.csv"), quote = TRUE)
+}
+
+## Read the .csv file of the input and use names and create an xlsx file for the same table
+x3 <- read.csv("/Users/devinkjones/Desktop/Clean.csv")
+write.xlsx(x3, "/Users/devinkjones/Desktop/Clean.xlsx")
+
+## Taxonomic Identifiers
+## get_ids(database, db = "ncbi")
+## get_tsn(databse/vector, accepted = TRUE)
+x4 <- read.xlsx("/Users/devinkjones/Desktop/Clean.xlsx", sheetIndex = 1)
+x5 <- get_tsn(x4$Use_Name, accepted = TRUE, ask = TRUE)
+
+
+## Reformat the tsn output to glean what we need from the 'get_tsn' output
+## First, we have to structure the tsn output for "wide" format in to a compact format
+## Then, we list the output of the newly structured tsn output
+## Because we're focusing on TSN numbers, we don't really care about the other attributes of the TSN output
+## So we're just going to list them (and make it wide), then melt it to transfer it to long format
+str(x5)
+x6 <- as.list(x5)
+x7 <- melt(x6)
+
+## And combine the columns of Input_Name, Use_Name, and TSN #
+x8 <- cbind(x4, x7)
+x9 <- subset(x8, select = -c(1,5))
+
+## Classifications using TSN identifiers
+## ****THIS IS THE ONE WE WANT TO USE THE TSN NUMBERS WITH****
+## GIVES US ALL THE INFO FOR EVERYTHING ABOVE THE TSN
+TSNClassification <- classification(x9$value, db = "itis")
+
+## To create file with 'for' data output
+## t function is to transpose the column output (Function = classification) of the taxonomic names, ranks, and TSN columns; in this example, it's the TSN# or 'id'
+## Append must equal TRUE to add data lines and not write over
+## Use brackets around [id] because you cannot use $ with a vector (which is not recursive, but atomic)
+## ***THIS IS AN EXAMPLE (BELOW)***SKIP TO THE FOLLOWING CODE TO HANDLE 'NA' LINES AND GET THE ID # TAGGED ON TO EACH ROW***
+
+##for (i in "vector"){
+  ##j <- t(i["id"])
+  ##write.table(j, file = "/Users/devinkjones/Desktop/name.csv", row.names = TRUE, append=TRUE, na="NA", quote= FALSE, sep=" ")
+##}
+
+## Switch [id] to [name] for taxonomy or [rank] for ranking; ["id"] will return the TSN number 
+## Once written, use Excel 'filter' function to remove descriptive rows, and match the data with the TSN or name inputs
+
+## ***USE THIS ONE WHEN YOU'RE ACTUALLY RUNNING YOUR CODE***
+## Keep in mind, you'll have to change the directories
+> for (i in TSNClassification){
+  if(is.na(i)){
+    write.table(i, file = "/Users/devinkjones/Desktop/name.csv", row.names = FALSE, append=TRUE, na="NA", quote= FALSE, col.names = FALSE, sep="}")    
+    } else {
+      j <- t(i["name"])
+      k <- as.character(tail(i$id, n=1))
+      l <- cbind(k,j)
+      write.table(l, file = "/Users/devinkjones/Desktop/name.csv", row.names = FALSE, append=TRUE, na="NA", quote= FALSE, col.names = FALSE, sep="}")
+    }
+  }
+
+## To figure out how many columns a row has per listing, use the max(count.fields) function below
+## Have to CHANGE the location of the file for this to read correctly
+max(count.fields("/Users/devinkjones/Desktop/name.csv", sep="}"))
+
+## Open/Read the CSV file into R to prepare to join it with the species list
+## Because we have various column lengths, have to add 'col.names = paste0("V",seq_len(19))' and 'fill = TRUE' to let the read know there are up to X (19 in this case) columns and 'fill' will allow R to just overlook those empty cells (or cells with no values for up to 19 columns)
+TaxonomyList <- read.table("/Users/devinkjones/Desktop/name.csv", sep = "}", col.names = paste0("V",seq_len(19)), fill = TRUE)
+View (TaxonomyList)
+
+## Join it with the previous 'Clean' list and join using the TSN numbers
+SpeciesList <- left_join(x9, TaxonomyList, by = c("value"="V1"))
+
+## And pare it down to unique listings
+SpeciesList <- unique(SpeciesList)
+
+
+----
+## EXTRA CODE AND EXPLANATIONS WITHIN THE TAXIZE PACKAGE
+
+
+## Taxonomic Rank
+## tax_rank(database/vector, db = "itis", return_id = TRUE)
+tax_rank(x9$Use_Name, db = 'itis')
+
+## Taxomonic names given 'name' input (have to manually select "best fit")
+## Will NOT use TSN numbers to search the database
+## Will return NA if (say) you have an order input (genus = NA, family = NA)
+## tax_name(query = "database", get = c("genus", "family", "order", "class"))
+outtry <- tax_name(query = x9$Use_Name, get = c("genus", "family", "order", "class"))
+
+## Making a dataframe for 'tax_name' output
+data.frame(Qu = outtry$query, Cl = outtry$class, Or = outtry$order, Fa = outtry$family, Ge = outtry$genus)
+
+## Writing .csv file for dataframe output
+## Whatever comes after '.../Desktop/' is the file name and type (i.e., csv, txt)
+write.csv(dataf, file = "/Users/devinkjones/Desktop/outtry.csv")
+
+
