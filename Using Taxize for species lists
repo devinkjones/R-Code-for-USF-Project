@@ -57,7 +57,7 @@ View(Species)
 names(Species)
 
 ## Extract the columns of interest and combine them in a new dataframe
-df1 <- select(Species, "OrganizationIdentifier", "ActivityIdentifier", "ActivityStartDate", "ProjectIdentifier", "MonitoringLocationIdentifier", "AssemblageSampledName", "SampleCollectionMethod.MethodIdentifier", "SampleCollectionMethod.MethodIdentifierContext", "SampleCollectionMethod.MethodName", "SampleCollectionMethod.MethodDescriptionText", "SampleCollectionEquipmentName", "CharacteristicName", "ResultMeasureValue", "ResultMeasure.MeasureUnitCode", "ResultStatusIdentifier", "ResultValueTypeName", "BiologicalIntentName", "SubjectTaxonomicName", "ProviderName")
+df1 <- select(Species, "OrganizationIdentifier","OrganizationFormalName", "ActivityIdentifier","ActivityMediaName", "ActivityStartDate", "ProjectIdentifier", "MonitoringLocationIdentifier", "AssemblageSampledName", "SampleCollectionMethod.MethodIdentifier", "SampleCollectionMethod.MethodIdentifierContext", "SampleCollectionMethod.MethodName", "SampleCollectionMethod.MethodDescriptionText", "SampleCollectionEquipmentName", "CharacteristicName", "ResultMeasureValue", "ResultMeasure.MeasureUnitCode", "ResultStatusIdentifier", "ResultValueTypeName","ResultCommentText", "BiologicalIntentName", "SubjectTaxonomicName","TaxonomicPollutionTolerance","ResultAnalyticalMethod.MethodIdentifier","ResultAnalyticalMethod.MethodIdentifierContext","ResultAnalyticalMethod.MethodName", "ProviderName")
 View(df1)
 
 ## Extract unique species identities from database
@@ -97,12 +97,21 @@ x7 <- melt(x6)
 
 ## And combine the columns of Input_Name, Use_Name, and TSN #
 x8 <- cbind(x4, x7)
+
+## Can subset the data if you're looking to get rid of the number/miscellaneous column
 x9 <- subset(x8, select = -c(1,5))
 
 ## Classifications using TSN identifiers
 ## ****THIS IS THE ONE WE WANT TO USE THE TSN NUMBERS WITH****
 ## GIVES US ALL THE INFO FOR EVERYTHING ABOVE THE TSN
 TSNClassification <- classification(x9$value, db = "itis")
+
+----
+## TROUBLESHOOT 'classification' error
+## If you get an error that as.tsn cannot handle a "factor", have to use following:
+attach("datasheet/datatable")
+value <- as.numeric(levels(value)[value])
+----
 
 ## To create file with 'for' data output
 ## t function is to transpose the column output (Function = classification) of the taxonomic names, ranks, and TSN columns; in this example, it's the TSN# or 'id'
@@ -149,20 +158,24 @@ SpeciesList <- unique(SpeciesList)
 
 ----
 ## EXTRA CODE AND EXPLANATIONS WITHIN THE TAXIZE PACKAGE
-
+----
 
 ## Taxonomic Rank
 ## tax_rank(database/vector, db = "itis", return_id = TRUE)
 tax_rank(x9$Use_Name, db = 'itis')
 
+----
+## This is actually the easiest way to extract specific information for taxonomic classes of interest (instead of trying to 'melt' and select equal '$names' and '$rank' in each frame)
+----
 ## Taxomonic names given 'name' input (have to manually select "best fit")
 ## Will NOT use TSN numbers to search the database
 ## Will return NA if (say) you have an order input (genus = NA, family = NA)
-## tax_name(query = "database", get = c("genus", "family", "order", "class"))
-outtry <- tax_name(query = x9$Use_Name, get = c("genus", "family", "order", "class"))
+## Also include 'messages = TRUE' for print out list of queried input with each returned row, and 'accepted = TRUE' so selected names are only 'valid' or 'accepted'
+## tax_name(query = "database", get = c("species","genus", "family", "order", "class","phylum"))
+outtry <- tax_name(query = as.character(x9$Use_Name), get = c("species","genus", "family", "order", "class","phylum"), messages = TRUE, accepted = TRUE)
 
 ## Making a dataframe for 'tax_name' output
-data.frame(Qu = outtry$query, Cl = outtry$class, Or = outtry$order, Fa = outtry$family, Ge = outtry$genus)
+data.frame(Qu = outtry$query, Ph = outtry$phylum, Cl = outtry$class, Or = outtry$order, Fa = outtry$family, Ge = outtry$genus, Sp = outtry$species)
 
 ## Writing .csv file for dataframe output
 ## Whatever comes after '.../Desktop/' is the file name and type (i.e., csv, txt)
