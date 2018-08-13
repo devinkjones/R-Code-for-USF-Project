@@ -1,0 +1,36 @@
+## Package: dataRetrieval
+## Function: readNWISqw 
+
+## The purpose of the readNWISqw is to obtain the metadata for USGS parameter codes for each site and summarize (in wide format) the values of measured parameters for each site (1 row per site)
+
+## Load in packages
+library(dataRetrieval)
+library(dplyr)
+library(rJava)
+library(xlsx)
+
+## Load in dataset
+PhysChem <- read.csv("/Users/devinkjones/Desktop/DataWQP/physchemresult.csv")
+
+## Convert the USGS site codes to 8-digit numerical values by removing USGS (create a new column with those values)
+## readNWISqw doesn't use the "USGS-" portion of the data, so we have to remove it
+USGS_Site <- PhysChem$MonitoringLocationIdentifier
+PhysChem$USGS_Site <- gsub("USGS-","", Try1)
+
+## Assign the new 8-digit to a variable so 'readNWISqw' can read the sites in
+SiteNum <- PhysChem$USGS_Site
+
+## Assign the 'USGSPCode' to a variable to be used in 'readNWISqw' for the parameter codes
+ParamCodes <- PhysChem$USGSPCode
+
+## Use readNWISqw to obtain parameter information and reformat in to wide format
+## 'startDate' can be assigned to the first date of the sampling period (or year; i.e., "2001-01-01"), or you can use the actual sample date (PhysChem$ActivityStartDate)
+## 'endDate' can be assigned if you want to only search within a window of time (otherwise, can be left off to run to present)
+## 'expanded=TRUE' gives metadata (and other data for "unbiased statistical analysis")
+## 'reshape = TRUE' turns the long-format data in to wide-format, providing one row per site
+wq <- readNWISqw(SiteNum, ParamCodes, startDate = "2001-01-01", expanded = TRUE, reshape = TRUE)
+
+## List of USGS water quality codes for parameters can be found in excel sheet
+USGSParamCodes <- read.xlsx("/Users/devinkjones/Desktop/DataWQP/USGSCode_ParameterCodes.xlsx", sheet = 3)
+
+## URL for USGS Water Quality Parameter Codes (https://help.waterdata.usgs.gov/parameter_cd?group_cd=%)
