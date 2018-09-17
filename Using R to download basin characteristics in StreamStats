@@ -144,6 +144,7 @@ View(x3)
 ## We then write a table that appends all lines without overwriting the previous (append = TRUE)
 ## The 'write.table' option of 'col.names' is set to '!file.exists' as during the first run, R writes the column headers we named, but then doesn't rewrite them for each row added
 ## **_NEED_** to include the 'quote = FALSE' option or else it'll be difficult to separate in the next step converting the .csv to a .xlsx file
+## Include 'includeparameters=true' in the URL to make sure the site downloads the parameters with each input, instead of doing it in a separate step
 
 for (row in 1:nrow(x3)){
   x <- x3[row, "LongitudeMeasure"]
@@ -181,6 +182,18 @@ View(x5)
 x5 <- left_join(x5, StateFIPSdata, by = c("StateCode" = "FIPS"))
 
 ## **STEP SIX**
+## Now that we have the full base details, we can remove the states that USGS StreamStats does not currently support
+## These states are currently: D.C., West Virginia, Nevada, Nebraska, Texas, Louisiana, Florida, Puerto Rico, Michigan, Wyoming
+## The StateFIPS codes for these are: 11, 54, 32, 31, 48, 22, 12, 72, 26, 56 <-- SUPER IMPORTANT TO DO OR YOUR CODE WILL NOT RUN AUTOMATICALLY, AND GET HUNG UP IF IT HITS ONE OF THESE STATES
+## We can 'filter' these states out of the site database (Some databases do not have these states included, but this ensures consistency among sites selected)
+x5 <- filter(x5, StateCode != "11")
+x5 <- filter(x5, StateCode != "54")
+.
+.
+x5 <- filter(x5, StateCode != "56")
+View(x5)
+
+##**STEP SEVEN**
 ## Now we can find the 'WorkspaceID' and 'Basin Characteristics' for the USGS Services Documentation using the obtained URLs
 ## First, set your URL and 'MonitoringLocationIdentifier' <- MonitoringLocationID is important so we can then join the output to the proper 'SiteData' file
 ## 'getURL' function comes from the 'RCurl' library
@@ -189,18 +202,21 @@ x5 <- left_join(x5, StateFIPSdata, by = c("StateCode" = "FIPS"))
 ## Added in the 'while'/'if'/'break' commands to try the URL repeatedly if the URL was kicked back instead of creating an error and stopping the whole code
 
 for(row in 1:nrow(x5)){
-  x <- x5[row,"URL"]
-  MonitoringLocationIdentifier <- x5[row,"MonitoringLocationIdentifier"]
+  USGSURL <- x5[row,"URL"]
+  SiteID <- x5[row,"MonitoringLocationIdentifier"]
+  SiteID <- as.character(SiteID)
   while(TRUE){
-    urlws <- try(fromJSON(as.character(x[1]), simplifyVector = FALSE), silent=TRUE)
+    urlws <- try(fromJSON(as.character(USGSURL[1]), simplifyVector = FALSE), silent=TRUE)
     if(!is(urlws, 'try-error')) break}
   WorkspaceID <- urlws$workspaceID
   CharNodes <- as.Node(urlws$parameters)
   ColVariables <- CharNodes$fieldsAll
   SiteDF <- ToDataFrameTree(CharNodes, "code", "description", "unit" , "value")
   SiteDF1 <- SiteDF[-(1),]
-  SiteDF1 <- cbind(SiteDF1, MonitoringLocationIdentifier = c(MonitoringLocationIdentifier[1]), WorkspaceID = WorkspaceID)
-  write.table(SiteDF1, "C:/Users/dkjones/Desktop/SiteDataTry.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("C:/Users/dkjones/Desktop/SiteDataTry.csv"), sep = "}")
+  SiteDF1 <- cbind(SiteDF1, MonitoringLocationIdentifier = c(SiteID[1]), WorkspaceID = WorkspaceID)
+  write.table(SiteDF1, "C:/Users/dkjones/Desktop/SiteData_Streams.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("C:/Users/dkjones/Desktop/SiteData_Streams.csv"), sep = "}")
+  progress(row, max.value = 3631) ## This value is the total number of rows following the 'filter' of state values)
+  if(row == 3631) message ("Done!")
 }
 
 ## Then, we convert the .csv file of the 'WorkspaceID' and 'Basin Characteristics' to a .xlsx file with separate columns
@@ -209,12 +225,42 @@ for(row in 1:nrow(x5)){
 y1 <- read.csv("/Users/devinkjones/Desktop/SiteData.csv", header = TRUE, sep = "}")
 write.xlsx(y1, "/Users/devinkjones/Desktop/SiteData.xlsx", row.names = FALSE)
 
+----
+## ONLY HAVE TO DO THESE STEPS IF YOU DIDNT FILTER OUT STATE FIPS FROM THE DATASET, AND HAD TO CREATE NUMEROUS SUBSETS AROUND THOSE STATES
+## We can combine all dataframes here from the StreamStats outputs in to one single dataframe
+## Have to start by reading them all in and creating dataframes for each site file
+## Include 'fileEncoding = "latin1"' as there are numerous symbols that are stripped from the URL that R cannot handle without the command
+
+df1 <- read.csv("/Users/devinkjones/Desktop/StreamSites/StreamSites/SiteData_Streams.csv", header = TRUE, sep = "}", stringsAsFactors = FALSE, fileEncoding = "latin1")
+.
+.
+.
+df15 <- read.csv("/Users/devinkjones/Desktop/StreamSites/StreamSites/SiteData_Streams15.csv", header = TRUE, sep = "}", stringsAsFactors = FALSE, fileEncoding = "latin1")
+
+## Then merge all dataframes
+
+tempdata <- bind_rows(df1,df2)
+tempdata <- bind_rows(tempdata,df3)
+.
+.
+.
+tempdata <- bind_rows(tempdata,df15)
+
+## Can remove unique 'Code' the USGS uses to describe basin characteristics
+## We can also remove the paired 'description' and 'unit' of measurements that correspond to that code
+
+data <- unique(y1[,c("code","description","unit")])  
+write.xlsx(data,"/Users/devinkjones/Desktop/StreamSites/VariableDefinitions.xlsx")
+----
+
+##**STEP EIGHT**
 ## We can now arrange the dataframe so that each 'MonitoringLocationIdentifier' and 'WorkspaceID' has the reported "Basin Characteristics" as columns
 ## Do this using 'reshape2' package and the 'dcast' function
 
 y2 <- dcast(y1, MonitoringLocationIdentifier + WorkspaceID ~ code, value.var = "value")
 View(y2)
 
+##**STEP NINE**
 ## We can now combine the 'WorkspaceID/Basin Characteristic' datafile with the main file branch with the ID, Long/Lat, Organization, etc. we've been adding to
 
 x6 <- left_join(x5, y2, by = "MonitoringLocationIdentifier")
