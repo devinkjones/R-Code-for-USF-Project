@@ -1,6 +1,6 @@
 ## RCode and data manipulation process for the extraction, synthesis, and analyses of open-source USGS and EPA data. 
 
-## Includes RCode to clean species lists (taxize) from databases, merge with location information (reshape2, dplyr, plyr), and clean existing state and county FIPS codes. 
+## Includes RCode to merge with location information (reshape2, dplyr, plyr), and clean existing state and county FIPS codes. 
 
 ## Includes RCode for the extraction of site, watershed, and drainage variables given a GPS location using the USGS StreamStats site. 
 ## Original RCode (package: streamstats; version: 0.0.1.9011; see below) was modified to directly access StreamStats (communication between R and StreamStats wasn't working, so had to modify RCode with URL tools)
