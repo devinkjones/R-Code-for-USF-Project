@@ -1,4 +1,6 @@
 ## File used to assign State (location) to the GPS units provided by the collection site identification data
+## Sometimes, assigned 'STATE_FIPS' code and GPS coordinates fall too closely to a state boundary, and R and StreamStats programs disagree with GPS/State FIPS code combination
+## This helps to clarify these codes/GPS coordinate disagreements
 
 ## Libraries used for streamstats extraction
 
