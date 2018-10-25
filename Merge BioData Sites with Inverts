@@ -1,0 +1,134 @@
+## Formatting of NAWQA Water Quality data with BioData
+## Rearranging BioData results for 'USGSSite'
+
+## Load libraries
+library(plyr)
+library(dplyr)
+library(dbplyr)
+library(stringr)
+library(rJava)
+library(xlsx)
+library(reshape2)
+library(data.table)
+library(tidyverse)
+library(zoo)
+library(ggplot2)
+library(usmap)
+library(rgdal)
+library(ggmap)
+library(doBy)
+
+## Load in dataset downloaded from USGS BioData (https://aquatic.biodata.usgs.gov/clearCriteria.action)
+## Filters for BioData
+## Under 'Biological Community/Data Type and Sample Type Filter', select 'Biological Community/Data Type', and select 'Invertebrates;
+## Under 'Organization/Program Filter', select 'National Water Quality Assessment' and 'National Stream Quality Assessment Network'
+Site <- read.csv("~/Desktop/USGS BioData NAWQA ONLY/20180921.1340.BioData_SiteInformation/20180921.1340.SiteInfo.csv")
+View(Site)
+
+## List the column headers of the dataset
+names(Site)
+[1] "ReleaseCategory"     "SiteNumber"          "SiteName"           
+[4] "AgencyCode"          "SiteWebCode"         "State"              
+[7] "StateFIPSCode"       "County"              "CountyFIPSCode"     
+[10] "Latitude_dd"         "Longitude_dd"        "CoordinateDatum"    
+[13] "Elevation_ft"        "VerticalDatum"       "HUCCode"            
+[16] "Ecoregion_NA_L1CODE" "Ecoregion_NA_L1NAME" "Ecoregion_NA_L2CODE"
+[19] "Ecoregion_NA_L2NAME" "Ecoregion_NA_L3CODE" "Ecoregion_NA_L3NAME"
+[22] "Ecoregion_US_L3CODE" "Ecoregion_US_L3NAME" "Ecoregion_US_L4CODE"
+[25] "Ecoregion_US_L4NAME" "DrainageArea_mi2"    "SiteType"           
+[28] "SiteTypeName"
+
+## Create a new variable to describe the site of interest by combining 'StateFIPSCode' and 'CountyFIPSCode'
+cols<- c("StateFIPSCode","CountyFIPSCode")
+Site$StateCountyFIPS <- do.call(paste, c(Site[cols], sep = "_"))
+
+## Create a new variable to describe the site of interest by combining 'AgencyCode' and 'SiteNumber'
+## This code will match NAWQA 'physchem' water results and 'basin characteristsics'
+cols<- c("AgencyCode","SiteNumber")
+Site$USGSSite <- do.call(paste, c(Site[cols], sep = "-"))
+View(Site)
+
+## Load in 'Invertebrate Results' dataset
+Inverts <- read.csv("~/Desktop/USGS BioData NAWQA ONLY/20180921.1327.BioData_InvertResults/20180921.1327.InvertResults.csv")
+View(Inverts)
+names(Inverts)
+-- 
+ [1] "SIDNO"                       "ReleaseCategory"             "ProvisionalData"            
+ [4] "ProjectLabel"                "SiteNumber"                  "CollectionDate"             
+ [7] "StartTime"                   "SampleTypeCode"              "SiteVisitSampleNumber"      
+[10] "ProjectAssignedSampleLabel"  "SiteName"                    "StudyReachName"             
+[13] "TimeDatum"                   "CollectionYear"              "CollectionMonth"            
+[16] "CollectionDayOfYear"         "NAWQA.SMCOD"                 "NAWQAStudyUnitCode"         
+[19] "LabOrderID"                  "LabRecordID"                 "FieldComponent"             
+[22] "LabComponent"                "LabProcName"                 "TaxonomicResultReviewStatus"
+[25] "PublishedSortOrder"          "BioDataTaxonName"            "BioDataShortName"           
+[28] "BenchTaxonName"              "BenchTaxonNameReferenceCode" "Density_m2"                 
+[31] "Abundance"                   "AdjRawCount"                 "RawCount"                   
+[34] "TotAreaSampled_m2"           "FieldSplitRatio"             "LabSubsamplingRatio"        
+[37] "Lifestage"                   "UniqueTaxonFlag"             "TargetLevelNotReachedReason"
+[40] "Artifact"                    "BenchNotes"                  "TaxonRecordSource"          
+[43] "IdentificationEntity"        "IdentificationDate"          "VerificationEntity"         
+[46] "VerificationDate"            "CurationEntity"              "CurationDate"               
+[49] "ITIS_TSN"                    "ITIS_MatchCode"              "PublishedTaxonNameLevel"    
+[52] "PublishedTaxonName"          "PublishedTaxonNameAuthority" "ScientificName"             
+[55] "Phylum"                      "Subphylum"                   "Class"                      
+[58] "Subclass"                    "Infraclass"                  "Superorder"                 
+[61] "Order"                       "Suborder"                    "Infraorder"                 
+[64] "Superfamily"                 "Family"                      "Subfamily"                  
+[67] "Tribe"                       "Genus"                       "Subgenus"                   
+[70] "Species"                     "Subspecies"                  "TaxonVersionNumber" 
+--
+
+## Remove columns from the 'InvertResults' dataset that are void of any information
+not_all_na <- function(x) any(!is.na(x))
+Inverts1 <- Inverts %>% select_if(not_all_na)
+View(Inverts1)
+## Removed 1 column
+
+## Filter dataset to unique 'SampleTypeCode' 
+## IRTH is the USGS sampling site for invertebrate identification and abundance counts in the "richest-targeted habitat (RTH)"
+## The RTH represents that habitat in the reach, usually erosional, where maximum taxa richness is likely to be observed.
+## DTH and QMH are taken to supplement RTH (but do not include abundance counts, just species id's)
+## BERW is for the EPA NRSA (Benthic Macroinverts Reach-Wide) which differs in collection protocols (11 combined kick-nets along the RTH)
+Inverts2 <- filter(Inverts1, SampleTypeCode == "IRTH")
+View(Inverts2)
+
+## Have to create the 'USGSSite' label for each specific site
+## This will allow us to bind to previous datasets for unique monitoring locations
+Inverts2$USGSSite <- paste("USGS", Inverts2$SiteNumber, sep = "-")
+
+## Length of unique 'USGSSites' should be 2050 if done correctly
+length(unique(Inverts2$USGSSite))
+[1] 2050
+
+## Rearrange columns so the 'USGSSite' is first on the dataset (making left_join much easier)
+Inverts3 <- Inverts2 %>% select(72,1, 6, 2:5, 7:71)
+
+## Can now extract variables/values you would like to examine at each site for a given collection date
+## I like to use 'CollectionDate' as some sites actually have multiple collections across years, and some even have multipes within a given year
+## So, do to this, we can 'dcast' the dataset by our 'USGSSite' + 'CollectionDate' so we have a unique pair for each row
+## In the example below, I used 'Phylum' as the variable of interest; this can be changed to any taxanomic level to match question of interest
+## In the example below, I used the sum of 'Abundance' (which is a corrected extrapolated numeric value given the # of inverts found in the subsample times the % of the subsample); can be swapped for any other density/abundance measure
+## Can also add 'CollectionYear' to this if we wanted to have that information as well; all depends on question we're answering; probably good to add it to create variable to link 'EstimatedPesticideData'
+SiteByDate <- dcast(Inverts3, USGSSite + CollectionDate + CollectionYear ~ Phylum, fun = sum, value.var = "Abundance")
+
+--
+## Can do basic descriptive statistics on the dataset to visualize the collection efforts
+## Say we want to see the number of collections carried out at a given site 
+library(doBy)
+func <- function(x) { n = length(unique(x))}
+summaryBy(CollectionDate~USGSSite, data = Inverts3, FUN = func)
+
+## Can also look at unique pairs of (columns) values within the dataset
+length(unique(Inverts3[,c('USGSSite','CollectionDate')]))
+  
+--
+## Graphing sites by Total Abundance of collected invertebrates
+## THIS IS FOR ALL COLLECTED INVERTS, AND IS NOT CORRECTED FOR # OF SAMPLES BY SITE OR BY SITE-DATE OR SITE-YEAR SAMPLES
+states <- map_data("state")
+ggplot(data = states) +
+  geom_polygon(aes(x = long, y = lat, group = group), fill="black", color = "white") +
+  guides(fill=FALSE) +
+  coord_fixed(1.3)  +
+  geom_point(data = df5, aes(x = Long, y = Lat, fill = "yellow", size = SumAbundance), shape = 21) + coord_map(xlim = c(-130, -65), ylim = c(20, 50)) +
+  labs(title = "NAWQA Invertebrate Data -- 2050 sites, Sum of Collected Invertebrates", size = "Total Invertebrate\nAbundance") 
