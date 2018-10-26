@@ -33,3 +33,6 @@ Moulton et al. 2002 Revised Protocols for Sampling Algal, Invertebrate, and Fish
 The data dictionary for BioData datasets downloaded from the USGS BioData Retrieval website
 Gives all of the (short) definitions of column labels ('names') of datasets downloaded through the Retrieval website
 Does not include some of the finer details regarding what values/labels mean within those columns, though
+
+4) Sprague et al. 2017
+Handling data and challenges that are priorities when synthesizing large data/publically available datasets
