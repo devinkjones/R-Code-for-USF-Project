@@ -1,0 +1,35 @@
+## Helpful documents to discern information in the USGS NAWQA databases
+
+Contents: 
+
+1) USGSPCode_ParamterCodes.xlsx
+This Excel file with various worksheets, including 'Physical Parameter Codes', 'BioData Phys Habitat Sampler Cd', 'All Parameter Codes', 'All Method Codes for Param Code', 'readNWISqw OutputNames', 'BioData - AqBioAssess Summaries'
+
+'Physical Parameter Codes'
+Includes an abbreviated list of 'Parameter Codes' that includes 'Physical' parameters, their names, and respective units
+
+'BioData Phys Habitat Sampler Cd'
+Includes list of Invertebrate Habitat Sampler codes that are used as part of the USGS BioData / NAWQA efforts
+List may not be complete; Sampler codes extracted from Moulton et al. 2002 Revised Protocols for Sampling Algal, Invertebrate, and Fish Communities as Part of the National Water-Quality Assessment Program. USGS Open-File Report 02-150 Reston, VA, USA.
+
+'All Parameter Codes'
+Includes table of all parameter codes, descriptions, and units
+Taken from: https://help.waterdata.usgs.gov/parameter_cd?group_cd=%
+
+'All Method Codes for Param Code'
+Includes a table of Method Codes (methods used to determine/measure/analyze Parameter values)
+'meth_cd' describes the Method Code used for a specific 'parm_cd'
+
+'readNWISqw OutputNames'
+List of 'names' from NWIS datasets
+List of codes and descriptors for columns found in NWIS datasets
+
+2) NAWQA_Invert_IQMH_2002_Wade.pdf
+Moulton et al. 2002 Revised Protocols for Sampling Algal, Invertebrate, and Fish Communities as Part of the National Water-Quality Assessment Program. USGS Open-File Report 02-150 Reston, VA, USA.
+
+.pdf that includes the protocols for sampling invertebrate, algae, and fish communities and habitats for the USGS BioData/NAWQA projects
+
+3) DataDictionary_BioData_V1.docx
+The data dictionary for BioData datasets downloaded from the USGS BioData Retrieval website
+Gives all of the (short) definitions of column labels ('names') of datasets downloaded through the Retrieval website
+Does not include some of the finer details regarding what values/labels mean within those columns, though
