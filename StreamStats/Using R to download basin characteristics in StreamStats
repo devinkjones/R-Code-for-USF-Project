@@ -219,6 +219,22 @@ for(row in 1:nrow(x5)){
   if(row == 3631) message ("Done!")
 }
 
+--
+## 'progress' was giving error readouts, so replaced with the following code
+## Can replace 'total' with 'nrow(df)'
+## 'style = 1' and 'style = 2' just shows a line of char. They differ in that 'style = 2' redraws the line each time, which is useful if other code might be writing to the R console. 'style = 3' marks the end of the range by | and gives a percentage to the right of the bar.
+total <- 20
+## create progress bar
+pb <- txtProgressBar(min = 0, max = total, style = 3)
+for(i in 1:total){
+   Sys.sleep(0.1)
+   # update progress bar
+   setTxtProgressBar(pb, i)
+}
+close(pb)
+--
+
+
 ## Then, we convert the .csv file of the 'WorkspaceID' and 'Basin Characteristics' to a .xlsx file with separate columns
 ## We read it in with the 'sep = "}" command to separate columns in files with any "}" (which is why we did the 'quote = FALSE' for the 'write.table' option and told is to use "}" instead)
 
