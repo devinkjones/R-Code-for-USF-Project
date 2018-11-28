@@ -1,0 +1,254 @@
+## USGS BioData Retrieval Data Synthesis
+## Formation of combined NAWQA datasets
+
+##Getting rJava to work depends heavily on your computers configuration:
+
+##You have to use the same 32bit or 64bit version for both: R and JDK/JRE. A mixture of this will never work (at least for me).
+##If you use 64bit version make sure, that you do not set JAVA_HOME as a enviorment variable. If this variable is set, rJava will not work for whatever reason (at least for me). You can check easily within R is JAVA_HOME is set with
+
+Sys.getenv("JAVA_HOME")
+
+##If you need to have JAVA_HOME set (e.g. you need it for maven or something else), you could deactivate it within your R-session with the following code before loading rJava:
+
+if (Sys.getenv("JAVA_HOME")!="")+
+  Sys.setenv(JAVA_HOME="")
+library(rJava)
+
+##This should do the trick in most cases. Furthermore this will fix issue Using the rJava package on Win7 64 bit with R, too. I borrowed the idea of unsetting the enviorment variable from R: rJava package install failing.
+
+
+## Load in libraries for data synthesis
+library(plyr)
+library(dplyr)
+library(dbplyr)
+library(stringr)
+library(rJava)
+library(xlsx)
+library(readxl)
+library(reshape2)
+library(data.table)
+library(tidyverse)
+library(zoo)
+library(doBy)
+library(vegan)
+
+## Graphing libraries for maps
+library(ggplot2)
+library(usmap)
+library(rgdal)
+library(ggmap)
+
+
+## Load in the BioData 'InvertResults' dataset
+## Gotta do this first to set up the resulting 'left_join' functions on site, collection date, collection year
+InvertResults <- read.csv("C:/Users/dkjones/Desktop/BioData Retrieval/20181108.0955.BioData_InvertResults/20181108.0955.InvertResults.csv")
+View(InvertResults)
+
+names(InvertResults)
+[1] "ï..SIDNO"                    "ReleaseCategory"             "ProvisionalData"            
+[4] "ProjectLabel"                "SiteNumber"                  "CollectionDate"             
+[7] "StartTime"                   "SampleTypeCode"              "SiteVisitSampleNumber"      
+[10] "ProjectAssignedSampleLabel"  "SiteName"                    "StudyReachName"             
+[13] "TimeDatum"                   "CollectionYear"              "CollectionMonth"            
+[16] "CollectionDayOfYear"         "NAWQA.SMCOD"                 "NAWQAStudyUnitCode"         
+[19] "LabOrderID"                  "LabRecordID"                 "FieldComponent"             
+[22] "LabComponent"                "LabProcName"                 "TaxonomicResultReviewStatus"
+[25] "PublishedSortOrder"          "BioDataTaxonName"            "BioDataShortName"           
+[28] "BenchTaxonName"              "BenchTaxonNameReferenceCode" "Density_m2"                 
+[31] "Abundance"                   "AdjRawCount"                 "RawCount"                   
+[34] "TotAreaSampled_m2"           "FieldSplitRatio"             "LabSubsamplingRatio"        
+[37] "Lifestage"                   "UniqueTaxonFlag"             "TargetLevelNotReachedReason"
+[40] "Artifact"                    "BenchNotes"                  "TaxonRecordSource"          
+[43] "IdentificationEntity"        "IdentificationDate"          "VerificationEntity"         
+[46] "VerificationDate"            "CurationEntity"              "CurationDate"               
+[49] "ITIS_TSN"                    "ITIS_MatchCode"              "PublishedTaxonNameLevel"    
+[52] "PublishedTaxonName"          "PublishedTaxonNameAuthority" "ScientificName"             
+[55] "Phylum"                      "Subphylum"                   "Class"                      
+[58] "Subclass"                    "Infraclass"                  "Superorder"                 
+[61] "Order"                       "Suborder"                    "Infraorder"                 
+[64] "Superfamily"                 "Family"                      "Subfamily"                  
+[67] "Tribe"                       "Genus"                       "Subgenus"                   
+[70] "Species"                     "Subspecies"                  "TaxonVersionNumber"  
+
+## FOR DIVERSITY/ABUNDANCE MEASUREMENTS, WE HAVE TO USE THE 'IRTH' 'SampleTypeCode' in the dataset
+## 'IRTH' is the code for a USGS sampling protocol for invertebrate identification and abundance counts in the "richest-targeted habitat (RTH)"
+## The RTH represents that habitat in the reach, usually erosional, where maximum taxa richness is likely to be observed
+## IDTH and IQMH are taken to supplement IRTH (**but do not include abundance counts, just taxon id**)
+## BERW is for the EPA NRSA (Benthic Macroinverts Reach-Wide) which differs in collection protocols (11 combined kick-nets along the RTH)
+Invert1 <- filter(InvertResults, SampleTypeCode == "IRTH")
+
+## FOR DIVERSITY/ABUNDANCE MEASURES, WE ARE GOING TO USE 'SPECIES'- TO 'FAMILY'-LEVEL TAXONOMIC IDENTIFIERS
+## Filter dataset to include all 'PublishedTaxonNames' that fall between 'Species'- and 'Family'-level organizations
+## We do this to include a broader diversity calculation (Bozzuto & Blanckenhorn 2017 Taxonomic resolution and treatment effects – alone and combined – can mask significant biodiversity reductions: https://doi.org/10.1080/21513732.2016.1260638)
+Invert2 <- filter(Invert1, PublishedTaxonNameLevel == "Species" | PublishedTaxonNameLevel == "Subgenus"| PublishedTaxonNameLevel == "Genus"| PublishedTaxonNameLevel == "Tribe"| PublishedTaxonNameLevel == "Subfamily"  | PublishedTaxonNameLevel == "Family")
+View(Invert2)
+
+## Change 'SiteNumber' to a character value
+Invert2$SiteNumber <- as.character(as.numeric(Invert2$SiteNumber))
+
+## Create a new variable that includes both 'PublishedTaxonName' and 'ITIS_TSN' to identify unique listings among invertebrates
+cols<- c("PublishedTaxonName","ITIS_TSN")
+Invert2$SpeciesTSN <- do.call(paste, c(Invert2[cols], sep = "_"))
+View(Invert2)
+
+## Load in dataset that contains functional feeding groups of invertebrates (will combine two sets; one USEPA, one USGS)
+USEPA_FFG <- read_excel("C:/Users/dkjones/Desktop/BioData Retrieval/USEPA RBP Macroinvert FFG.xlsx", sheet = "USEPA RBAP - Appendix B")
+
+## Of course, with taxonomic level, some taxon may not have FFG assigned to their ID (e.g., all spp. within family may not fill the same FFG)
+
+names(USEPA_FFG)
+[1] "Parent TSN"                "TSN"                       "Scientific Name"          
+[4] "Southeast (NC) RTV"        "Upper Midwest (WI) RTV"    "Midwest (OH) RTV"         
+[7] "Northwest (ID) RTV"        "Mid-Atlantic (MACS) RTV"   "Primary FFG"              
+[10] "Secondary FFG"             "Primary HabitatBehavior"   "Secondary HabitatBehavior"
+
+## Create a new variable that includes both 'Scientific Name' and 'TSN' that matches variable created in BioData table (Invert2)
+cols1<- c("Scientific Name","TSN")
+USEPA_FFG$SpeciesTSN <- do.call(paste, c(USEPA_FFG[cols1], sep = "_"))
+View(USEPA_FFG)                        
+
+## From the 'USEPA_FFG' set, select the columns of interest
+## Remove the duplicates columns with the 'unique' function; if we don't remove duplicates, we will add rows to the BioData set
+USEPA_FFG1 <- select(USEPA_FFG, "SpeciesTSN", "Parent TSN", "TSN", "Scientific Name", "Primary FFG")
+USEPA_FFG2 <- unique(USEPA_FFG1)
+
+## Can now 'left_join' the USEPA FFG dataset to the BioData set
+Invert3 <- left_join(Invert2, USEPA_FFG2, by = "SpeciesTSN")
+
+## As there are (sometimes) multiple entries per site throughout the year (and across years), we have to be able to have a variable to sum (or max,mean,min) values
+## We can add a quarter to each year to describe the temporal time of the value
+Invert3$Quarter <- as.yearqtr(Invert3$CollectionDate, format = "%Y-%m-%d")
+
+--- 
+## Also going to filter down on 'FieldComponent' to 'M' for "main-body" sample type
+## 'FieldComponent' is made up of four components, each corresponding to a select "type" of the sample enumerated during the cleaning/processing of field samples
+Invert3 %>% group_by(FieldComponent) %>% summarise(UniqueComponents = n_distinct(LabRecordID))
+## A tibble: 4 x 2
+FieldComponent   UniqueComponents
+<fct>                       <int>
+1 E                            25
+2 L                         18122
+3 M                        194403
+4 S                           380
+## E refers to "elutriate", L refers to "large-rare", M refers to "main-body", and S refers to "split"
+
+## Keep in mind, L, E, and S may provide more species richness
+
+## Filter down on 'FieldComponent' for "main-body" (M)
+Invert4 <- filter(Invert3, FieldComponent == "M")
+
+---
+## USGS FFG dataset is not as clean as EPA; Here are options on an attempt to clean/combine with the larger dataset
+## FFG aren't matched to a specific spp.; therefore, many species have duplicate or contrasting listings
+## Can try using following code to clean/combine, but not confident in the resulting matches (not 100% confident, anyhow)
+
+## Load in dataset that contains functional feeding groups of invertebrates (USGS dataset)
+InvertTraits <- read.delim("C:/Users/dkjones/Desktop/BioData Retrieval/InvertTraitsTable_v1.txt")
+names(InvertTraits)
+
+[1] "TraitRecord_ID"          "Taxon"                   "Family"                 
+[4] "Genus"                   "Study_Citation"          "Study_location_state"   
+[7] "Study_location_county"   "Study_location_region"   "Study_latitude"         
+[10] "Study_longitude"         "Study_dates"             "Adult"                  
+[13] "Data_entry"              "Data_entry_date"         "WB_type_lake"           
+[16] "WB_type_pond"            "WB_type_wetland"         "WB_type_warm_sp"        
+[19] "WB_type_cold_sp"         "WB_type_headwater"       "WB_type_2.4_order"      
+[22] "WB_type_river"           "WB_type_brackish"        "WB_type_temp_lentic"    
+[25] "WB_type_eph_lotic"       "WB_type_other"           "WB_type_other_specify"  
+[28] "Primary_WB_type"         "Study_elevation_min"     "Study_elevation_max"    
+[31] "Max_body_size"           "Measured_length"         "Measured_width"         
+[34] "Measured_height"         "Body_shape"              "Body_shape_case"        
+[37] "Mediate_drag"            "Morph_adapt_suckers"     "Morph_adapt_friction"   
+[40] "Morph_adapt_hooks"       "Morph_adapt_silk"        "Morph_adapt_ballast"    
+[43] "Morph_adapt_hairy"       "Morph_adapt_other"       "Armor"                  
+[46] "Resp_early"              "Resp_late"               "Resp_adult"             
+[49] "Resp_comments"           "Emerge_behav_drift"      "Emerge_behav_climb"     
+[52] "Emerge_behav_crawl"      "Emerge_behav_comment"    "Emerge_season_all_year" 
+[55] "Emerge_synch"            "Emerge_season_1"         "Emerge_season_2"        
+[58] "Ovipos_behav_prim"       "Ovipos_behav_sec"        "Ovipos_behav_comments"  
+[61] "Eggs_cement"             "Ovipos_duration"         "Feed_mode_prim"         
+[64] "Feed_mode_sec"           "Feed_mode_comments"      "Habit_prim"             
+[67] "Habit_sec"               "Habit_comments"          "Current_quiet"          
+[70] "Current_slow"            "Current_fast_lam"        "Current_fast_turb"      
+[73] "Microhab_sand"           "Microhab_silt"           "Microhab_gravel"        
+[76] "Microhab_rocks"          "Microhab_boulder"        "Microhab_LWD"           
+[79] "Microhab_detritus"       "Microhab_phyto"          "Microhab_algae"         
+[82] "Microhab_pelagic"        "Microhab_comments"       "Lat_lotic_margin"       
+[85] "Lat_lentic_shore"        "Lat_pool"                "Lat_riffle"             
+[88] "Lat_hyporheic"           "Lat_comments"            "Vert_surface"           
+[91] "Vert_phytes"             "Vert_pelagic"            "Vert_bed"               
+[94] "Vert_hyporheic"          "Vert_comments"           "Drift_early"            
+[97] "Drift_late"              "Larval_disp"             "Adult_disp"             
+[100] "Exit_temporarily"        "No.Aquatic_stages"       "Voltinism"              
+[103] "Volt_comments"           "Dev_speed"               "Dev_pattern"            
+[106] "Adult_lifespan"          "Adult_lifespan_comments" "Fecundity"              
+[109] "Eggs_single"             "Eggs_1mass"              "Eggs_multiple_batch"    
+[112] "Hatch_time"              "Hatch_time_comments"     "Diapause"               
+[115] "O2_normal"               "O2_low"                  "Low_lethal_DO"          
+[118] "pH_acidic"               "pH_normal"               "pH_alkaline"            
+[121] "Salin_fresh"             "Salin_brackish"          "Salin_salt"             
+[124] "Thermal_pref"            "Min_temp_reported"       "Max_temp_reported"      
+[127] "Max_lethal_temp"         "Thermal_comments"        "Turbidity"
+
+## Clean 'Taxon' listing of "spp." so we can combine with 'ScientificName' (as ITIS_TSN numbers are not given for USGS dataset)
+InvertTraits$Taxon <- str_remove_all(InvertTraits$Taxon, "spp.")
+
+## Can add 'NA' to cells that are blank in the 'Feed_mode_prim' (helps with later steps)
+InvertTraits$Feed_mode_prim[InvertTraits$Feed_mode_prim == ""] <- NA
+
+## Now we can exclude all rows of values that are duplicates
+## This returns duplicate c("Taxon", "Family", "Genus") rows, but different "Feed_mode_prim" rows
+InvertTraits1 <- InvertTraits %>% group_by(Taxon, Family, Genus, Feed_mode_prim) %>% filter(n()==1)
+
+## Can then exclude rows in the dataset that are filled with 'NA' values
+InvertTraits2 <- InvertTraits1 %>% group_by(Taxon) %>% filter(Feed_mode_prim != "NA")
+
+## Reduce dataset to the columns we're interested in
+InvertTraits3 <- InvertTraits2[,c("Taxon","Family","Genus","Feed_mode_prim","Feed_mode_sec","Feed_mode_comments","Habit_prim","Habit_sec","Habit_comments")]
+
+## Determine which rows are duplicated in the cleaned set
+which(duplicated(InvertTraits3[,c("Taxon","Family","Genus")]))
+
+
+---
+## To do this correctly, we have to create multiple datasets now using our 'Invert3' dataset
+## Each response variable we'll want to calculate for a 'SiteNumber'(single rows) will need to be 'dcast'
+## The "left side" of the 'dcast' will be the same for each response variable ("right side")
+## Our left side should include the variables we will use to carryover (and mesh ['left_join'] with) the next datasets
+## Our right side will be variables (groups) of interest
+  
+attach(Invert4)
+
+## LeftSide 
+(SiteNumber + SiteName + StudyReachName + CollectionDate + CollectionYear + Quarter + SampleTypeCode + FieldComponent)
+
+## Use 'dcast' to convert the dataframe to make 'Order' indeces accessible
+OrderxSite <- dcast(Invert4, SiteNumber + SiteName + StudyReachName + CollectionDate + CollectionYear + Quarter + SampleTypeCode + FieldComponent ~ Order, value.var = "Abundance", fun.aggregate = sum)
+View(OrderBySite)
+
+## Use 'dcast' to convert the dataframe to make 'FFG' indeces accessible
+FFGxSite <- dcast(Invert4, SiteNumber + SiteName + StudyReachName + CollectionDate + CollectionYear + Quarter + SampleTypeCode + FieldComponent ~ `Primary FFG`, value.var = "Abundance", fun.aggregate = sum)
+View(FFGxSite)
+
+## FUNCTIONAL FEEDING DESCRIPTIONS
+PA=parasite
+PR=predator
+OM=omnivore
+GC=gatherer/collector	FC=filter/collector
+SC=scraper
+SH=shredder
+PI=piercer
+
+## Try 'diversity' for 'OrderxSite' 
+OrderDiversityShan <- diversity(OrderxSite[,10:44], "shannon")
+OrderDiversitySimp <- diversity(OrderxSite[,10:44], "simpson")
+OrderDiversityInv <- diversity(OrderxSite[,10:44], "inv")
+
+## Use 'dcast' to convert the dataframe to make 'FFG' indeces accessible
+FFGxSite <- dcast(Invert4, SiteNumber + SiteName + StudyReachName + CollectionDate + CollectionYear + Quarter + SampleTypeCode + FieldComponent ~ `Primary FFG`, value.var = "Abundance", fun.aggregate = sum)
+View(FFGxSite)
+
+## Can repeat these 'dcast' steps to obtain any number of response variables for a given site
+
+## Next: 'left_join' the "Site x ___" sets with USGS NAWQA data and USGS StreamStats basin characteristics data using 'Reshape PhysChem' R code
+
