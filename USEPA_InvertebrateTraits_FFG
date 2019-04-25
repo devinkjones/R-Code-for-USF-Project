@@ -1,0 +1,283 @@
+---
+title: "USEPA Invertebrate Traits: Functional Feeding Groups"
+author: "DKJ"
+output: Condensed USEPA Invert Trait Database https://www.epa.gov/risk/freshwater-biological-traits-database-traits
+---
+## Load in libraries
+```{r}
+library(rmarkdown)
+library(knitr)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+library(stringr)
+library(readxl)
+```
+
+## Load in dataset
+```{r}
+EPA_InvertTraits <- read_excel("/Users/devinkjones/Desktop/USGS BioData_Inverts ONLY/USEPA_FreshwaterBioTraits_Transposed_20100927.xlsx", sheet = "DataTable")
+View(EPA_InvertTraits)
+```
+
+## Need to clean up spelling differences among our variables of interest
+```{r}
+unique(EPA_InvertTraits$Feed_mode_prim)
+EPA_InvertTraits$Feed_mode_prim <- sub("predator", "Predator", EPA_InvertTraits$Feed_mode_prim)
+EPA_InvertTraits$Feed_mode_prim <- sub("shredder", "Shredder", EPA_InvertTraits$Feed_mode_prim)
+
+unique(EPA_InvertTraits$Feed_prim_abbrev)
+## These are okay (i.e., no duplicates)
+
+unique(EPA_InvertTraits$Feed_mode_sec)
+## These are okay (i.e., no duplicates)
+```
+
+## Filter dataset by 'TSN' (column 1) so we can use 'TSN' to match with our taxa database
+## Summarize the unique values provided in the database for the primary (full description and abbreviation) and secondary feeding groups (based on mouth morphology)
+### Included 'Taxon' in the 'group_by' to be used as a secondary identifier if 'TSN' is "NA"
+```{r}
+df1 <- EPA_InvertTraits %>% group_by(TSN,Taxon) %>% summarise(PrimaryFFG_Abb = paste(Feed_prim_abbrev, collapse = ", "))
+df2 <- EPA_InvertTraits %>% group_by(TSN,Taxon) %>% summarise(PrimaryFFG = paste(Feed_mode_prim, collapse = ", "))
+df3 <- EPA_InvertTraits %>% group_by(TSN,Taxon) %>% summarise(SecondaryFFG = paste(Feed_mode_sec, collapse = ", "))
+
+df1$Identifier <- paste(df1$TSN,df1$Taxon, sep = "_")
+df2$Identifier <- paste(df2$TSN,df2$Taxon, sep = "_")
+df3$Identifier <- paste(df3$TSN,df3$Taxon, sep = "_")
+
+## Left-join the dataframes together using 'TSN' as the targeted bind
+df4 <- left_join(df1,df2, by = "Identifier")
+df5 <- left_join(df4,df3, by = "Identifier")
+View(df5)
+
+## Clean up dataset
+df5 <- df5[c(4,1,2,3,7,10)]
+colnames(df5)[2]<- "TSN"
+colnames(df5)[3]<- "Taxon"
+View(df5)
+```
+
+## Can add in how many entries were combined for each 'TSN' x 'Taxon' group
+```{r}
+Entries <- EPA_InvertTraits %>% group_by(TSN, Taxon) %>% summarize(Entries = length(TSN))
+View(Entries)
+
+Entries$Identifier <- paste(Entries$TSN,Entries$Taxon, sep = "_")
+df6 <- left_join(df5, Entries, by = "Identifier")
+df7 <- df6[c(-7,-8)]
+View(df7)
+```
+
+#PRIMARY FFG
+## Now, we must use 'reshape2' to cast our dataset to determine which of the FFG appears most often
+## As we're looking to assign a FFG, we will not include "NA" or "Other (specify in comments)" in our responses
+```{r}
+castPrimFFG <- dcast(EPA_InvertTraits, TSN + Taxon ~ Feed_mode_prim)
+## As we're looking for an actual FFG, we're going to drop the 'NA' column from this portion (if there is no FFG identified, it'll be filled in with an 'NA' later)
+castPrimFFG <- castPrimFFG[c(-12)]
+castPrimFFG <- castPrimFFG[c(-6)]
+castPrimFFG$Identifier <- paste(castPrimFFG$TSN,castPrimFFG$Taxon, sep = "_")
+```
+
+## To extract the (most frequent) FFG in the 'Feed_mode_prim'
+## Have to double-check these results using the 'ties.method = "last"' compared to results of 'ties.method = "first"' 
+## If the results do not match, it means the entered 'Feed_mode_prim' was equal among two FFG
+## First have to extract the middle of 'castPrimFFG'
+```{r}
+middle1 <- castPrimFFG[,3:10]
+View(middle1)
+
+## Now can extract the most frequent input of column FFG labels
+for(row in 1:nrow(middle1)){
+     CF <- middle1[row,"Collector-filterer"]
+     CG <- middle1[row,"Collector-gatherer"]
+     HB <- middle1[row,"Herbivore"]
+     PA <- middle1[row,"Parasite"]
+     PH <- middle1[row,"Piercer herbivore"]
+     PR <- middle1[row,"Predator"]
+     SG <- middle1[row,"Scraper/grazer"]
+     SH <- middle1[row,"Shredder"]
+     RowSum <- CF+CG+HB+PA+PH+PR+SG+SH
+     DF <- data.frame(CF,CG,HB,PA,PH,PR,SG,SH)
+     PrimaryFFG <- ifelse(RowSum >= 1, colnames(DF)[max.col(DF,ties.method = "first")], "NA")
+write.table(PrimaryFFG,"/Users/devinkjones/Desktop/Middle1.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/Middle1.csv"), sep = "}")
+}
+```
+## Now with 'ties.method = "last"'
+```{r}
+for(row in 1:nrow(middle1)){
+     CF <- middle1[row,"Collector-filterer"]
+     CG <- middle1[row,"Collector-gatherer"]
+     HB <- middle1[row,"Herbivore"]
+     PA <- middle1[row,"Parasite"]
+     PH <- middle1[row,"Piercer herbivore"]
+     PR <- middle1[row,"Predator"]
+     SG <- middle1[row,"Scraper/grazer"]
+     SH <- middle1[row,"Shredder"]
+     RowSum <- CF+CG+HB+PA+PH+PR+SG+SH
+     DF <- data.frame(CF,CG,HB,PA,PH,PR,SG,SH)
+     PrimaryFFG <- ifelse(RowSum >= 1, colnames(DF)[max.col(DF,ties.method = "last")], "NA")
+write.table(PrimaryFFG,"/Users/devinkjones/Desktop/Middle2.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/Middle2.csv"), sep = "}")
+}
+```
+## Read in the created datasets for PrimaryFFG
+```{r}
+FirstTie <- read.csv("/Users/devinkjones/Desktop/Middle1.csv")
+LastTie <- read.csv("/Users/devinkjones/Desktop/Middle2.csv")
+CombinedTies <- as.data.frame(cbind(FirstTie,LastTie))
+colnames(CombinedTies) <- c("PrimaryFFG_FirstTie", "PrimaryFFG_LastTie")
+View(CombinedTies)
+
+## Determine if there are discrepancies
+CombinedTies$PrimaryFFG_Comparison <- ifelse(CombinedTies$PrimaryFFG_FirstTie == CombinedTies$PrimaryFFG_LastTie, "TRUE", "DOUBLE-CHECK")
+View(CombinedTies)
+
+## To identify which rows are identified by "DOUBLE-CHECK", bind the 'CombinedTies' with 'df7'
+df8 <- cbind(df7, CombinedTies)
+View(df8)
+```
+
+#SECONDARY FFG
+## Now, we must use 'reshape2' to cast our dataset to determine which of the FFG appears most often
+## As we're looking to assign a FFG, we will not include "NA" or "Other (specify in comments)" in our responses
+```{r}
+castSecondFFG <- dcast(EPA_InvertTraits, TSN + Taxon ~ Feed_mode_sec)
+## As we're looking for an actual FFG, we're going to drop the 'NA' column from this portion (if there is no FFG identified, it'll be filled in with an 'NA' later)
+castSecondFFG <- castSecondFFG[c(-11)]
+castSecondFFG <- castSecondFFG[c(-5)]
+castSecondFFG$Identifier <- paste(castSecondFFG$TSN,castSecondFFG$Taxon, sep = "_")
+```
+
+## To extract the (most frequent) FFG in the 'Feed_mode_sec'
+## Have to double-check these results using the 'ties.method = "last"' compared to results of 'ties.method = "first"' 
+## If the results do not match, it means the entered 'Feed_mode_sec' was equal among two FFG
+## First have to extract the middle of 'castPrimFFG'
+```{r}
+middle2 <- castSecondFFG[,3:9]
+View(middle2)
+
+for(row in 1:nrow(middle2)){
+     CF <- middle2[row,"Collector-filterer"]
+     CG <- middle2[row,"Collector-gatherer"]
+     PA <- middle2[row,"Parasite"]
+     PH <- middle2[row,"Piercer herbivore"]     
+     PR <- middle2[row,"Predator"]
+     SG <- middle2[row,"Scraper/grazer"]
+     SH <- middle2[row,"Shredder"]
+     RowSumSecond <- CF+CG+PA+PH+PR+SG+SH
+     DF2 <- data.frame(CF,CG,PA,PH,PR,SG,SH)
+     SecondaryFFG <- ifelse(RowSumSecond >= 1, colnames(DF2)[max.col(DF2,ties.method = "first")], "NA")
+write.table(SecondaryFFG,"/Users/devinkjones/Desktop/MiddleSecond1.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/MiddleSecond1.csv"), sep = "}")
+}
+```
+## Now with 'ties.method = "last"'
+```{r}
+for(row in 1:nrow(middle2)){
+     CF <- middle2[row,"Collector-filterer"]
+     CG <- middle2[row,"Collector-gatherer"]
+     PA <- middle2[row,"Parasite"]
+     PH <- middle2[row,"Piercer herbivore"]     
+     PR <- middle2[row,"Predator"]
+     SG <- middle2[row,"Scraper/grazer"]
+     SH <- middle2[row,"Shredder"]
+     RowSumSecond <- CF+CG+PA+PH+PR+SG+SH
+     DF2 <- data.frame(CF,CG,PA,PH,PR,SG,SH)
+     SecondaryFFG <- ifelse(RowSumSecond >= 1, colnames(DF2)[max.col(DF2,ties.method = "last")], "NA")
+write.table(SecondaryFFG,"/Users/devinkjones/Desktop/MiddleSecond2.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/MiddleSecond2.csv"), sep = "}")
+}
+```
+## Read in the created datasets for PrimaryFFG
+```{r}
+FirstTie <- read.csv("/Users/devinkjones/Desktop/MiddleSecond1.csv")
+LastTie <- read.csv("/Users/devinkjones/Desktop/MiddleSecond2.csv")
+CombinedSecondTies <- as.data.frame(cbind(FirstTie,LastTie))
+colnames(CombinedSecondTies) <- c("SecondaryFFG_FirstTie", "SecondaryFFG_LastTie")
+View(CombinedSecondTies)
+
+## Determine if there are discrepancies
+CombinedSecondTies$SecondaryFFG_Comparison <- ifelse(CombinedSecondTies$SecondaryFFG_FirstTie == CombinedSecondTies$SecondaryFFG_LastTie, "TRUE", "DOUBLE-CHECK")
+View(CombinedSecondTies)
+
+## To identify which rows are identified by "DOUBLE-CHECK", bind the 'CombinedTies' with 'df7'
+df9 <- cbind(df8, CombinedSecondTies)
+View(df9)
+```
+
+
+#PRIMARY FFG ABB
+## Now, we must use 'reshape2' to cast our dataset to determine which of the FFG appears most often
+## As we're looking to assign a FFG, we will not include "NA" or "Other (specify in comments)" in our responses
+```{r}
+castAbbFFG <- dcast(EPA_InvertTraits, TSN + Taxon ~ Feed_prim_abbrev)
+## As we're looking for an actual FFG, we're going to drop the 'NA' column from this portion (if there is no FFG identified, it'll be filled in with an 'NA' later)
+castAbbFFG <- castAbbFFG[c(-9)]
+castAbbFFG$Identifier <- paste(castAbbFFG$TSN,castAbbFFG$Taxon, sep = "_")
+View(castAbbFFG)
+```
+
+## To extract the (most frequent) FFG in the 'Feed_mode_sec'
+## Have to double-check these results using the 'ties.method = "last"' compared to results of 'ties.method = "first"' 
+## If the results do not match, it means the entered 'Feed_mode_sec' was equal among two FFG
+## First have to extract the middle of 'castPrimFFG'
+```{r}
+middle3 <- castAbbFFG[,3:8]
+View(middle3)
+
+for(row in 1:nrow(middle3)){
+     CF <- middle3[row,"CF"]
+     CG <- middle3[row,"CG"]
+     HB <- middle3[row,"HB"]
+     PA <- middle3[row,"PA"]
+     PR <- middle3[row,"PR"]
+     SH <- middle3[row,"SH"]
+     RowSumAbb <- CF+CG+HB+PA+PR+SH
+     DF3 <- data.frame(CF,CG,HB,PA,PR,SH)
+     AbbFFG <- ifelse(RowSumAbb >= 1, colnames(DF3)[max.col(DF3,ties.method = "first")], "NA")
+write.table(AbbFFG,"/Users/devinkjones/Desktop/MiddleAbb1.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/MiddleAbb1.csv"), sep = "}")
+}
+```
+## Now with 'ties.method = "last"'
+```{r}
+for(row in 1:nrow(middle3)){
+     CF <- middle3[row,"CF"]
+     CG <- middle3[row,"CG"]
+     HB <- middle3[row,"HB"]
+     PA <- middle3[row,"PA"]
+     PR <- middle3[row,"PR"]
+     SH <- middle3[row,"SH"]
+     RowSumAbb <- CF+CG+HB+PA+PR+SH
+     DF3 <- data.frame(CF,CG,HB,PA,PR,SH)
+     AbbFFG <- ifelse(RowSumAbb >= 1, colnames(DF3)[max.col(DF3,ties.method = "last")], "NA")
+write.table(AbbFFG,"/Users/devinkjones/Desktop/MiddleAbb2.csv", append=TRUE, quote = FALSE, row.names = FALSE, col.names=!file.exists("/Users/devinkjones/Desktop/MiddleAbb2.csv"), sep = "}")
+}
+```
+## Read in the created datasets for PrimaryFFG
+```{r}
+FirstTie <- read.csv("/Users/devinkjones/Desktop/MiddleAbb1.csv")
+LastTie <- read.csv("/Users/devinkjones/Desktop/MiddleAbb2.csv")
+CombinedAbbTies <- as.data.frame(cbind(FirstTie,LastTie))
+colnames(CombinedAbbTies) <- c("AbbFFG_FirstTie", "AbbFFG_LastTie")
+View(CombinedAbbTies)
+
+## Determine if there are discrepancies
+CombinedAbbTies$AbbFFG_Comparison <- ifelse(CombinedAbbTies$AbbFFG_FirstTie == CombinedAbbTies$AbbFFG_LastTie, "TRUE", "DOUBLE-CHECK")
+View(CombinedAbbTies)
+
+## To identify which rows are identified by "DOUBLE-CHECK", bind the 'CombinedTies' with 'df7'
+df10 <- cbind(df9, CombinedAbbTies)
+View(df10)
+```
+
+## To finally select the most frequent label for a given TSN, we can ask which appears most often as the maximum value
+```{r}
+## Create a new dataframe with the results of the Primary, Secondary, and Primary_Abb maximums
+attach(df10)
+newdf <- data.frame(PrimaryFFG_FirstTie, PrimaryFFG_LastTie, SecondaryFFG_FirstTie, SecondaryFFG_LastTie, AbbFFG_FirstTie, AbbFFG_LastTie)
+newdf1 <- apply(newdf, 1, function(x) names(which.max(table(x))))
+newdf1 <- as.character(newdf1)
+newdf1 <- as.data.frame(newdf1)
+colnames(newdf1) <- "TopMatch_FFG"
+newdf1$TopMatch_FFG <- sub("NULL", "NA", newdf1$TopMatch_FFG)
+df11 <- data.frame(df10,newdf1)
+View(df11)
+```
