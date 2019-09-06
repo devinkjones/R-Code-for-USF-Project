@@ -1,0 +1,340 @@
+---
+title: "Cleaning USGS BioData InvertResults"
+author: "DKJ"
+version: "1"
+date: "5/2019"
+---
+
+# STEP 1 -- LOAD IN LIBRARIES (AND DEPENDENCIES)
+  library(dplyr)
+  library(dbplyr)
+  library(stringr)
+  library(rJava)
+  library(xlsx)
+  library(readxl)
+  library(reshape2)
+  library(data.table)
+  library(tidyverse)
+  library(tidyr)
+  library(zoo)
+  library(doBy)
+  library(vegan)
+  
+
+# STEP 2 -- LOAD IN INVERTEBRATE DATABASES
+  ## Load in 'Invertebrate Results' database
+  InvertResults <- read.csv("/Users/devinkjones/Desktop//USGS BioData_Inverts ONLY/20180920.0708.BioData_InvertResults/20180920.0708.InvertResults.csv")
+  View(InvertResults)
+  ## Load in 'Invertebrate Results' database (Fill in directory)
+  #InvertResults <- read.csv(".../.../.../name.csv")
+  #View(InvertResults)
+
+  
+# Step 2b -- SUBSETTING INVERTEBRATE DATABASE FOR NAWQA-RELATED SAMPLES ONLY
+    ### Without doing this, we will have duplicated 'LabRecordID' with other non-NAWQA samples, so we have to do this step early
+  ## We now have to ensure we are using NAWQA-related data to avoids duplicate 'LabRecordID' when projects outside of NAWQA are included
+  ## We can do this using the 'Project' file included with the BioData downloads
+  Project <- read.csv("~/Desktop/USGS BioData_Inverts ONLY/20180919.1446.BioData_Project/20180919.1446.Project.csv", comment.char="#")
+  NAWQAProjects <- filter(Project, Program == "National Water Quality Assessment")
+  Projects <- unique(NAWQAProjects$ProjectLabel)
+  ## Now that we have the unique 'ProjectLabel' that ONLY deal with NAWQA projects, we can filter the large dataset on those 'ProjectLabel' using the 'Projects' vector
+  InvertResults2 <- filter(InvertResults, ProjectLabel %in% Projects)
+  ## Can double-check that we do not have any duplicate 'LabRecordID' within our subset of NAWQA data
+  which(duplicated(InvertResults2$LabRecordID))
+  
+  ## *** IF YOU WANT TO USE THE -BIOTDB DATABASE RELATED INQUIRIES ONLY
+  # InvertResults2 <- InvertResults[grep("BioTDB", InvertResults$ProjectLabel),]
+  ## Subset the dataset for all 'ProjectLabel' that include "BioTDB"
+  ## ***BioTDB*** describes a centralized database system for storing, maintaining, and distributing NAWQA ecology data
+    ### Bio-TDB - https://my.usgs.gov/confluence/download/attachments/583666840/BIO-TDB_FOR_BIO_DATA--WHAT_IT_IS_ETC.PPT.GZ?version=1&modificationDate=1373319278000&api=v2
+
+  
+# STEP 3 -- LOAD IN USGS ***PROPRIETARY*** DATASETS 
+    ### This dataset ***SHOULD NOT BE POSTED*** with online code
+  ## Load in 'Proprietary' dataset provided by USGS personnel
+  Proprietary <- read_excel("/Users/devinkjones/Desktop/USGS BioData_Inverts ONLY/From Scott/Query8_Updated.xlsx")
+  ## Create a character ratio to avoid Excel reading in the file and generating decimal ratios
+  Proprietary$Ratio <- paste('"', Proprietary$NWQLSubsamplingCode, '"', sep = " ")
+  View(Proprietary)
+  
+  ## Load in 'Sampler' dataset generated from 'Proprietary' dataset
+  ## 'Sampler' contains all unique "Ratio" entries
+  ## Unique "Ratio" entries were assigned a "SamplerType" of FS (Folsom Sampler) or Grid (Gridded Tray) based upon USGS OFR 00-212 
+  ## (Moulton et al. 2000 Methods of analysis by the U.S. Geological Survey National Water Quality Laboratory -- Processing, taxonomy, and quality control of benthic macroinvertebrate samples)
+  ## 'SamplerType' decided by DKJ
+  Sampler <- read.csv("/Users/devinkjones/Desktop/USGS BioData_Inverts ONLY/From Scott/Grotheer -- Ratio&SamplerType.csv")
+  Sampler$Ratio <- as.character(Sampler$Ratio)
+  View(Sampler)
+  
+  ## Combine 'Proprietary' and 'Sampler' using the "Ratio" character
+  SamplingRatio_SamplerType <- left_join(Proprietary, Sampler, by = "Ratio")
+  View(SamplingRatio_SamplerType)  
+  
+  
+# STEP 4 -- MERGE 'PROPRIETARY' DATASET (SAMPLERTYPE/RATIO) WITH 'INVERTRESULTS'
+  ## Combine 'SamplingRatio_SamplerType' with 'InvertResults'
+  ## Both data sets contain unique 'LabRecordID'
+  InvertAndSampler <- left_join(InvertResults2, SamplingRatio_SamplerType, by = "LabRecordID")
+  View(InvertAndSampler)
+
+  
+# STEP 5 -- CLEANING AND SUBSETTING 'INVERTANDSAMPLER' DATASET 
+    ### Have to sum invertebrate abundance of duplicate species entries for 'SamplerType' == " FS " that have multiple 'Ratio' entries
+    ### This *** IS ONLY FOR THE FOLSOM SAMPLER SAMPLES *** as the gridded trays should only include subsamples (CORRECTION: Gridded trays can have duplicates if 'BenchNotes' created and organisms is reassigned taxon; Thus, I've added new sections to combine duplicate species entries 'Abundance' measures)
+  ## Folsom samplers split the sample repeatedly, and count ***ALL*** individuals towards the abundance measures
+  ## So, this first step in determining 'Abundance' is to sum (e.g., collapse) all entries for a given species at each collection site for a single 'Abundance' measure
+  
+  InvertAndSampler1 <- InvertAndSampler %>% filter(SampleTypeCode == "IRTH")
+  ## "IRTH" == The RTH theoretically supports the faunistically richest invertebrate community and is typically represented by a coarse-grained riffle or a woody snag. The 
+  ## semi-quantitative RTH sample consists of a series of discrete collections (for example, five Slack samples or 10 woody snag sections) that are processed and combined
+  ## into a single composited sample.
+  
+  InvertAndSampler2 <- InvertAndSampler1 %>% filter(FieldComponent == "M")
+  ## 'FieldComponent' "M" refers to the "Main-body sample" 
+  
+  InvertAndSampler2$CollectionDate <- as.Date(InvertAndSampler2$CollectionDate)
+  ## Converts 'CollectionDate' to date format from factor
+  
+  InvertAndSampler2$Identifier <- paste(InvertAndSampler2$SIDNO, InvertAndSampler2$SiteNumber, InvertAndSampler2$CollectionDate, sep = "_")
+  ## Added in a distinct 'SIDNO' (sample number) x 'SiteNumber' x 'CollectionDate' identifier to each row
+  ## Easier to sort on this later
+
+    ### *** It is at this stage, we COULD filter for a given 'Lifestage' ( (blank), L [larvae], P [pupae], A [adult]); we will leave in ALL 'Lifestage' at this moment***
+    ### *** We will HAVE TO include 'Lifestage' within our unique identifiers for each site, as not to lose this level of detail for analyses***
+ 
+   
+# STEP 6 -- SUBSETTING AND COMBINING DATASETS -- MIXED RATIO SAMPLES
+    ## We now have to clean the data for sites that used a Folsom Sampler that identified invertebrates with multiple 'LabSubsamplingRatio'
+      ### IF n_distinct(LabSubsamplingRatio) == 1, then the sample was either fully counted or only the subsample was entered (WHICH IS WHAT WE WANT)
+      ### IF n_distinct(LabSubsamplingRatio) >= 2, then the sample was split multiple times (FS), or includes "lab large rare" individuals (e.g., species entry will include 1:1 and other subsampled ratio) on a Gridded tray
+      ### So we first filter all sites for those with >= 2 'LabSubsamplingRatio'
+  Invert_MixedRatios <- InvertAndSampler2 %>% group_by(Identifier) %>% filter(n_distinct(LabSubsamplingRatio) >= 2)
+    ## Now add unique grouping variable to the dataset which we will sort on later
+  Invert_MixedRatios$SampleGrouping <- paste(Invert_MixedRatios$SIDNO, Invert_MixedRatios$SiteNumber, Invert_MixedRatios$CollectionDate, Invert_MixedRatios$BioDataTaxonName, Invert_MixedRatios$Lifestage, sep = "_")
+  
+ 
+# STEP 7 -- SUBSETTING AND COMBINING DATASETS -- SINGLE RATIO SAMPLES
+  ## Now that we have all sites with multiple 'LabSubsamplingRatio', the anti_join function will give us all samples with a single ratio
+  Invert_SingleRatios <- anti_join(InvertAndSampler2, Invert_MixedRatios)
+  Invert_SingleRatios$DatasetPortion <- paste("SingleRatios")
+  View(Invert_SingleRatios)
+  
+  ## ***HOWEVER, THERE ARE DUPLICATE SPECIES ENTRIES WITHIN SAMPLES DUE TO BENCH TAXON IDENTIFICATION
+  ## We can combine those individuals in to a single 'Abundance' measure to remove duplicates
+  Invert_SingleRatios$SampleGrouping <- paste(Invert_SingleRatios$SIDNO, Invert_SingleRatios$SiteNumber, Invert_SingleRatios$CollectionDate, Invert_SingleRatios$BioDataTaxonName, Invert_SingleRatios$Lifestage, sep = "_")
+  SingleRatio_Duplicates <- Invert_SingleRatios[duplicated(Invert_SingleRatios$SampleGrouping)|duplicated(Invert_SingleRatios$SampleGrouping,fromLast = TRUE),]
+  View(SingleRatio_Duplicates)
+
+  ## Add identifiers so we can see which columns were collapsed
+    ### Now that we have all duplicated 'SingleRatio' samples, we have to combine the 'Abundance' measures (as per communication with Scott Grotheer 6-17-19; 'BenchNotes' of duplicated entries indicate changed identification/sample type of specimens; can combine either 'Abundance' or 'RawCount')
+    ### In order to know which samples are being grouped, we first need to identify which 'LabRecordID' are included in the summed 'Abundance' values
+    ### This enables us to track which samples would be included in this measure
+  LabRecord_Labels_SingleRatiosDupes <- SingleRatio_Duplicates %>% group_by(SampleGrouping) %>% summarise(LabRecordIDs = paste(LabRecordID, collapse = "_"))
+    ### We can also add the unique 'Ratio' included in the duplicates
+  Ratio_Labels_SingleRatiosDupes <- SingleRatio_Duplicates %>% group_by(SampleGrouping) %>% summarise(Ratios = paste(Ratio, collapse = "_"))
+    ### Now we can the 'LabRecord_Labels' to the duplicated data
+  SingleRatio_Duplicates <- left_join(SingleRatio_Duplicates, LabRecord_Labels_SingleRatiosDupes, by = "SampleGrouping")
+  SingleRatio_Duplicates <- left_join(SingleRatio_Duplicates, Ratio_Labels_SingleRatiosDupes, by = "SampleGrouping")
+  View(SingleRatio_Duplicates)
+  
+  ## THESE FOLLOWING STEPS ARE TO CLEAN THE 'SINGLERATIO' DATASET AND MAKE IT EASIER TO SUM ABUNDANCE MEASURES FOR DUPLICATED SPECIES ENTRIES
+  SumSingleRatioData <- SingleRatio_Duplicates
+  SumSingleRatioData2 <- SumSingleRatioData[,c(1:29,37:81,30:36)] ## Moving the numeric values of each row to the end of the dataset to better visualize the changes we're making
+  SumSingleRatioData3 <- SumSingleRatioData2[,-c(20,66:69)] ## Removed columns from the dataset that we have created values for (e.g., LabRecord_Labels, Ratio_Labels) or served their purpose (e.g., Proprietary, SamplerRatio_SamplerType)
+  SumSingleRatioData4 <- SumSingleRatioData3 %>% group_by(SampleGrouping) %>% summarize(SummedAbundance = sum(Abundance)) ## Groups the unique 'SampleGrouping' and sums the 'Abundance' data for each group of values
+  SumSingleRatioData5 <- left_join(SumSingleRatioData3, SumSingleRatioData4, by = "SampleGrouping") ## Adds the 'SummedAbundance' value to each row based on the 'SampleGrouping' ID
+  SumSingleRatioData6 <- SumSingleRatioData5[!duplicated(SumSingleRatioData5$SampleGrouping),] ## Removes the first row of each unique 'SampleGrouping'; Takes a single row, which we will then place the 'SummedAbundance' value in
+  SumSingleRatioData7 <- SumSingleRatioData6 ## To not overwrite the previous step so we can always modify later
+  SumSingleRatioData7$Abundance <- SumSingleRatioData7$SummedAbundance ## Replacing the 'Abundance' value with the 'SummedAbundance' value
+  SumSingleRatioData7$Density_m2 <- "NA"
+  SumSingleRatioData7$AdjRawCount <- "NA"
+  SumSingleRatioData7$RawCount <- "NA"  ## ALL of these "NA" are being added because the 'SummedAbundance' value is the only one we're interested in, and we cannot use these values that belong to the single sample value
+  SumSingleRatioData7$TotAreaSampled_m2 <- "NA"
+  SumSingleRatioData7$FieldSplitRatio <- "NA"
+  ### We also have to make these "NA" values 'as.numeric' values to properly 'bind_rows' in a later step
+  SumSingleRatioData7$Density_m2 <- as.numeric(SumSingleRatioData7$Density_m2)
+  SumSingleRatioData7$AdjRawCount <- as.numeric(SumSingleRatioData7$AdjRawCount)
+  SumSingleRatioData7$RawCount <- as.numeric(SumSingleRatioData7$RawCount)
+  SumSingleRatioData7$TotAreaSampled_m2 <- as.numeric(SumSingleRatioData7$TotAreaSampled_m2)
+  SumSingleRatioData7$FieldSplitRatio <- as.numeric(SumSingleRatioData7$FieldSplitRatio)
+  SumSingleRatioData8 <- SumSingleRatioData7[,-77] ## Removing the 'SummedAbundance' column as we've placed the values in 'Abundance' (to match the other datasets)
+  SumSingleRatioData8$Note <- paste("Abundance measure is summed 'Abundance' across multiple inputs (see 'LabRecordsIDs'); Likely due to changed identification (e.g., BenchNotes)") ## Adding a note to the dataset to help identify the 'SummedAbundance' measures
+  SumSingleRatioData8$DatasetPortion <- paste("SummedAbundance_SingleRatios")
+
+# STEP 7b -- CREATING THE 'CORRECTED-SINGLERATIO'DATASET THAT INCLUDES THE SUMMED 'ABUNDANCE'DUPLICATES AND NON-DUPLICATEDROWS OF 'SINGLERATIO'
+  ## Now that we have the corrected summed values for the 'SingleRatio_Duplicates', we need to add these rows to the non-duplicated rows within the 'SingleRatio' portions
+  SingleRatios_NonDuplicates <- anti_join(Invert_SingleRatios, SingleRatio_Duplicates)
+  SingleRatios_NonDuplicates$DatasetPortion <- paste("NonDuplicate_SingleRatio")
+  ## To this, we have to add our corrected 'SummedAbundance' dataset
+  Corrected_SingleRatios <- bind_rows(SingleRatios_NonDuplicates, SumSingleRatioData8)
+  View(Corrected_SingleRatios)
+  
+  
+# STEP 8 -- SUBSETTING AND COMBINING DATASETS -- MIXED RATIO AND SAMPLER ENTRIES 
+  ## We now have a dataset (STEP 6) that includes gridded trays AND Folsom samplers or more than 2 'LabSubsamplingRatio' from Folsom Samplers for each site
+    ### Visually, for a site, it's either: "1:1 FS + Grid ratio" or "1:1 FS + 1:2 FS + 1:4 FS + ..."
+
+  
+# STEP 8b -- SEPARATING GRIDDED-TRAY SAMPLES FROM "LAB-LARGE RARE" SAMPLES
+    ### For those with "1:1 FS + Grid ratio", a "lab-large rare" individual was recorded following a gridded tray subsample
+    ### We have to remove that biased individual(s) from the abundance data, as they are identified and recorded from the the remaining sample outside of the selected number of gridded cells
+  Invert_MixedRatios_GridsAndFS <- Invert_MixedRatios %>% group_by(Identifier) %>% filter(n_distinct(SamplerType) == 2)    
+    ### Permits us to examine those sites with different sampler types (e.g., n_distinct(SamplerType) ==2, which is 1:1 FS + Grid)
+
+  Invert_MixedSamplerType_GridOnly_LLRRemoved <- Invert_MixedRatios_GridsAndFS %>% group_by(Identifier) %>% filter(SamplerType == "Grid")
+  Invert_MixedSamplerType_GridOnly_LLRRemoved$DatasetPortion <- paste("Grid_LLRRemoved")
+    ### Extracts the portion of the site sample that was correctly sampled as part of the gridded tray
+    ### *** THIS DATASET IS THE CORRECT GRIDDED SUBSAMPLE INFORMATION WHICH NEEDS TO BE COMBINED WITH SUMMED FOLSOM SAMPLER DATA*** 
+    ### (CORRECTED: NEED TO SEARCH FOR DUPLICATE LISTINGS IN THIS DATASET AS WELL)
+  
+# STEP 8B -- CORRECTING AND COMBINING DATASETS -- DUPLICATE GRIDDED SAMPLE ENTRIES
+  ## Now that we have all the gridded portion of samples ('Invert_MixedSamplerType_GridOnly_LLRRemoved'), we should ensure each sample-by-site-by-date includes a single 'LabSubsamplingRatio'
+  Gridded_LLRRemoved <- Invert_MixedSamplerType_GridOnly_LLRRemoved
+  Ensure_All_Share_Ratio <- Gridded_LLRRemoved %>% group_by(Identifier) %>% filter(LabSubsamplingRatio >= 2)
+    ### 'Ensure_All_Share_Ratio' should return 0 observations if all sample-by-site-by-date groupings are represented by a single 'LabSubsamplingRatio'
+  
+  ## Now, we can check the subsampled gridded samples for any duplicates
+  Gridded_LLRRemoved_Duplicates <- Gridded_LLRRemoved[duplicated(Gridded_LLRRemoved$SampleGrouping)|duplicated(Gridded_LLRRemoved$SampleGrouping, fromLast = TRUE),]
+  Gridded_LLRRemoved_Duplicates1 <- Gridded_LLRRemoved_Duplicates
+  Gridded_LLRRemoved_Duplicates1$DatasetPortion <- paste("Gridded_LLRRemoved_Duplicates")
+  View(Gridded_LLRRemoved_Duplicates1)
+  
+  ## Add identifiers so we can see which columns were collapsed
+    ### Now that we have all duplicated 'SingleRatio' samples, we have to combine the 'Abundance' measures (as per communication with Scott Grotheer 6-17-19; 'BenchNotes' of duplicated entries indicate changed identification/sample type of specimens; can combine either 'Abundance' or 'RawCount')
+    ### In order to know which samples are being grouped, we first need to identify which 'LabRecordID' are included in the summed 'Abundance' values
+    ### This enables us to track which samples would be included in this measure
+  LabRecord_Labels_Gridded_LLRRDupes <- Gridded_LLRRemoved_Duplicates1 %>% group_by(SampleGrouping) %>% summarise(LabRecordIDs = paste(LabRecordID, collapse = "_"))
+    ### We can also add the unique 'Ratio' included in the duplicates (which should be the same for all duplicates)
+  Ratio_Labels_Gridded_LLRRDupes <- Gridded_LLRRemoved_Duplicates1 %>% group_by(SampleGrouping) %>% summarise(Ratios = paste(Ratio, collapse = "_"))
+    ### Now we can the 'LabRecord_Labels' and 'Ratio_Labels' to the duplicated data
+  Gridded_LLRRemoved_Duplicates2 <- left_join(Gridded_LLRRemoved_Duplicates1, LabRecord_Labels_Gridded_LLRRDupes, by = "SampleGrouping")
+  Gridded_LLRRemoved_Duplicates3 <- left_join(Gridded_LLRRemoved_Duplicates2, Ratio_Labels_Gridded_LLRRDupes, by = "SampleGrouping")
+  View(Gridded_LLRRemoved_Duplicates3)
+  
+  ## THESE FOLLOWING STEPS ARE TO CLEAN THE 'SINGLERATIO' DATASET AND MAKE IT EASIER TO SUM ABUNDANCE MEASURES FOR DUPLICATED SPECIES ENTRIES
+  SumGridLLRData <- Gridded_LLRRemoved_Duplicates3
+  SumGridLLRData2 <- SumGridLLRData[,c(1:29,37:82,30:36)] ## Moving the numeric values of each row to the end of the dataset to better visualize the changes we're making
+  SumGridLLRData3 <- SumGridLLRData2[,-c(20,66:69)] ## Removed columns from the dataset that we have created values for (e.g., LabRecord_Labels, Ratio_Labels) or served their purpose (e.g., Proprietary, SamplerRatio_SamplerType)
+  SumGridLLRData4 <- SumGridLLRData3 %>% group_by(SampleGrouping) %>% summarize(SummedAbundance = sum(Abundance)) ## Groups the unique 'SampleGrouping' and sums the 'Abundance' data for each group of values
+  SumGridLLRData5 <- left_join(SumGridLLRData3, SumGridLLRData4, by = "SampleGrouping") ## Adds the 'SummedAbundance' value to each row based on the 'SampleGrouping' ID
+  SumGridLLRData6 <- SumGridLLRData5[!duplicated(SumGridLLRData5$SampleGrouping),] ## Removes the first row of each unique 'SampleGrouping'; Takes a single row, which we will then place the 'SummedAbundance' value in
+  SumGridLLRData7 <- SumGridLLRData6 ## To not overwrite the previous step so we can always modify later
+  SumGridLLRData7$Abundance <- SumGridLLRData7$SummedAbundance ## Replacing the 'Abundance' value with the 'SummedAbundance' value
+  SumGridLLRData7$Density_m2 <- "NA"
+  SumGridLLRData7$AdjRawCount <- "NA"
+  SumGridLLRData7$RawCount <- "NA"  ## ALL of these "NA" are being added because the 'SummedAbundance' value is the only one we're interested in, and we cannot use these values that belong to the single sample value
+  SumGridLLRData7$TotAreaSampled_m2 <- "NA"
+  SumGridLLRData7$FieldSplitRatio <- "NA"
+  ### We also have to make these "NA" values 'as.numeric' values to properly 'bind_rows' in a later step
+  SumGridLLRData7$Density_m2 <- as.numeric(SumGridLLRData7$Density_m2)
+  SumGridLLRData7$AdjRawCount <- as.numeric(SumGridLLRData7$AdjRawCount)
+  SumGridLLRData7$RawCount <- as.numeric(SumGridLLRData7$RawCount)
+  SumGridLLRData7$TotAreaSampled_m2 <- as.numeric(SumGridLLRData7$TotAreaSampled_m2)
+  SumGridLLRData7$FieldSplitRatio <- as.numeric(SumGridLLRData7$FieldSplitRatio)
+  SumGridLLRData8 <- SumGridLLRData7[,-77] ## Removing the 'SummedAbundance' column as we've placed the values in 'Abundance' (to match the other datasets)
+  SumGridLLRData8$Note <- paste("Abundance measure is summed 'Abundance' across multiple inputs (see 'LabRecordsIDs'); Likely due to changed identification (e.g., BenchNotes)") ## Adding a note to the dataset to help identify the 'SummedAbundance' measures
+  SumGridLLRData8$DatasetPortion <- paste("SummedAbundance_Gridded_LLRRemoved")
+  
+  ## Now that we have the corrected summed values for the 'Gridded_LLRRemoved_Duplicates', we need to add these rows to the non-duplicated rows within the 'SingleRatio' portions
+  Gridded_NonDuplicates <- anti_join(Invert_MixedSamplerType_GridOnly_LLRRemoved, Gridded_LLRRemoved_Duplicates)
+  nrow(Gridded_NonDuplicates)
+  Gridded_NonDuplicates$DatasetPortion <- paste("NonDuplicate_Gridded_LLRRemoved")
+  ## To this, we have to add our corrected 'SummedAbundance' dataset
+  Corrected_Gridded_LLRRemoved <- bind_rows(Gridded_NonDuplicates, SumGridLLRData8)
+  View(Corrected_Gridded_LLRRemoved)
+
+---
+    ### Side note
+    ### If we wanted to have a list of all "lab large rare" individuals that are entered as part of a gridded sample
+  Invert_MixedSamplerType_LLR <- anti_join(Invert_MixedRatios_GridsAndFS, Invert_MixedSamplerType_GridOnly_LLRRemoved)
+---
+  
+# STEP 9 -- FOLSOM-SAMPLER SAMPLES WITH DUPLICATE SPECIES ENTRIES DUE TO MULTIPLE 'LABSUBSAMLINGRATIO' -- MIXED RATIO SAMPLES
+  ## We now have to clean the data for sites that used a Folsom Sampler that identified invertebrates with multiple 'LabSubsamplingRatio'
+    ### IF n_distinct(LabSubsamplingRatio) == 1, then the sample was either fully counted or only the subsample was entered (WHICH IS WHAT WE WANT)
+    ### IF n_distinct(LabSubsamplingRatio) >= 2, then the sample was split multiple times (FS), or includes "lab large rare" individuals (e.g., species entry will include 1:1 and other subsampled ratio) on a Gridded tray
+    ### So we first filter all sites for those with >= 2 'LabSubsamplingRatio' (duplicate STEP 6 action)
+  Invert_MixedRatios <- InvertAndSampler2 %>% group_by(SIDNO, SiteNumber, CollectionDate) %>% filter(n_distinct(LabSubsamplingRatio) >= 2)
+    ### BUT, since we're interested in those with only Folsom Samplers (not FS + Grid), we can add that in the filter as well
+  Invert_MixedRatios_FolsomSamplerOnly <- Invert_MixedRatios %>% group_by(SIDNO, SiteNumber, CollectionDate) %>% filter(n_distinct(SamplerType) == 1)
+  ## ***IMPORTANT ANTI_JOIN FUNCTION*** Alternate path to obtain samples with multiple subsampling ratios but ALL Folsom samplers
+  Invert_MixedRatios_FolsomSamplerOnly_AntiJoin <- anti_join(Invert_MixedRatios, Invert_MixedRatios_GridsAndFS)
+    
+  ## Now that we have these ***FOLSOM SAMPLER ONLY*** samples, we can combine the 'Abundance' data for duplicate species entries
+    ### We first have to create a unique variable that encompasses each site-by-collection-date-by-biota-by-life-stage combination
+  Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SampleGrouping <- paste(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SIDNO, Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SiteNumber, Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$CollectionDate, Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$BioDataTaxonName, Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$Lifestage, sep = "_")
+  ## Now we can reduce the dataset to duplicate entries
+  ## We will include both "from the first duplicate" and "from the last duplicate" to bookend each duplicate entry
+  Invert_MixedRatios_Folsom_AntiJoin_Duplicates <- Invert_MixedRatios_FolsomSamplerOnly_AntiJoin[duplicated(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SampleGrouping)|duplicated(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SampleGrouping, fromLast = TRUE),]
+  
+    ### For unique elements within the Anti_join dataset (JUST UNIQUES -- NOT CORRECTED)
+    ### This step is used to count rows following the reduction of duplicates being combined with unique entries
+  Antijoin_Uniques <- Invert_MixedRatios_FolsomSamplerOnly_AntiJoin[!duplicated(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SampleGrouping),]
+    ### Or
+  Antijoin_Uniques1 <- Invert_MixedRatios_FolsomSamplerOnly_AntiJoin[unique(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin$SampleGrouping),]
+
+  ## Now that we have all duplicated 'FS' samples, we have to combine the 'Abundance' measures (as per communication with Scott Grotheer 5-3-19; "always is a pretty BIG word, but I think that (summing 'Abundance') is a safe way to go")
+    ### In order to know which samples are being grouped, we first need to identify which 'LabRecordID' are included in the summed 'Abundance'
+    ### This enables us to track which samples would be included in this summed measure
+  LabRecord_Labels <- Invert_MixedRatios_Folsom_AntiJoin_Duplicates %>% group_by(SampleGrouping) %>% summarise(LabRecordIDs = paste(LabRecordID, collapse = "_"))
+    ### We can also add the unique 'Ratio' included in the duplicate entries
+  Ratio_Labels <- Invert_MixedRatios_Folsom_AntiJoin_Duplicates %>% group_by(SampleGrouping) %>% summarise(Ratios = paste(Ratio, collapse = "_"))
+    ### Now we can add the 'LabRecord_Labels' and 'Ratio_Labels' to the duplicated data rows
+  Invert_MixedRatios_Folsom_AntiJoin_Duplicates <- left_join(Invert_MixedRatios_Folsom_AntiJoin_Duplicates, LabRecord_Labels, by = "SampleGrouping")
+  Invert_MixedRatios_Folsom_AntiJoin_Duplicates <- left_join(Invert_MixedRatios_Folsom_AntiJoin_Duplicates, Ratio_Labels, by = "SampleGrouping")
+  View(Invert_MixedRatios_Folsom_AntiJoin_Duplicates)
+
+  ## THESE FOLLOWING STEPS ARE TO CLEAN THE DATASET AND MAKE IT EASIER TO SUM ABUNDANCE MEASURES
+  SumData <- Invert_MixedRatios_Folsom_AntiJoin_Duplicates
+  SumData2 <- SumData[,c(1:29,37:81,30:36)] ## Moving the numeric values of each row to the end of the dataset to better visualize the changes we're making
+  SumData3 <- SumData2[,-c(20,66:69,81)] ## Removed columns from the dataset that we have created values for (e.g., LabRecord_Labels, Ratio_Labels) or served their purpose (e.g., Proprietary, SamplerRatio_SamplerType)
+  SumData4 <- SumData3 %>% group_by(SampleGrouping) %>% summarize(SummedAbundance = sum(Abundance)) ## Groups the unique 'SampleGrouping' and sums the 'Abundance' data for each group of values
+  SumData5 <- left_join(SumData3, SumData4, by = "SampleGrouping") ## Adds the 'SummedAbundance' value to each row based on the 'SampleGrouping' ID
+  SumData6 <- SumData5[!duplicated(SumData5$SampleGrouping),] ## Removes the first row of each unique 'SampleGrouping'; Takes a single row, which we will then place the 'SummedAbundance' value in
+  SumData7 <- SumData6 ## To not overwrite the previous step so we can always modify later
+  SumData7$Abundance <- SumData7$SummedAbundance ## Replacing the 'Abundance' value with the 'SummedAbundance' value
+  SumData7$Density_m2 <- "NA"
+  SumData7$AdjRawCount <- "NA"
+  SumData7$RawCount <- "NA"  ## ALL of these "NA" are being added because the 'SummedAbundance' value is the only one we're interested in, and we cannot use these values that belong to the single sample value
+  SumData7$TotAreaSampled_m2 <- "NA"
+  SumData7$FieldSplitRatio <- "NA"
+    ### We also have to make these "NA" values 'as.numeric' values to properly 'rbind' in a later step
+  SumData7$Density_m2 <- as.numeric(SumData7$Density_m2)
+  SumData7$AdjRawCount <- as.numeric(SumData7$AdjRawCount)
+  SumData7$RawCount <- as.numeric(SumData7$RawCount)
+  SumData7$TotAreaSampled_m2 <- as.numeric(SumData7$TotAreaSampled_m2)
+  SumData7$FieldSplitRatio <- as.numeric(SumData7$FieldSplitRatio)
+  SumData8 <- SumData7[,-76] ## Removing the 'SummedAbundance' column as we've placed the values in 'Abundance' (to match the other datasets)
+  SumData8$Note <- paste("Abundance measure is summed 'Abundance' across multiple folsom sampler inputs (see 'LabRecordsIDs')") ## Adding a note to the dataset to help identify the 'SummedAbundance' measures
+  SumData8$DatasetPortion <- paste("SummedAbundance_FolsomSampler")
+  
+    ### Now that we have the corrected summed values, we need to add these rows to the non-duplicated rows within the Folsom Sampler portions
+  Invert_MixedRatios_Folsom_NonDuplicates <- anti_join(Invert_MixedRatios_FolsomSamplerOnly_AntiJoin, Invert_MixedRatios_Folsom_AntiJoin_Duplicates, by = "SampleGrouping")
+  Invert_MixedRatios_Folsom_NonDuplicates$DatasetPortion <- paste("NonDuplicate_FolsomSampler")
+    ### To this, we have to add our corrected 'SummedAbundance' dataset
+  Corrected_MixedRatios_FolsomSamplerOnly <- bind_rows(Invert_MixedRatios_Folsom_NonDuplicates, SumData8)
+  View(Corrected_MixedRatios_FolsomSamplerOnly)
+
+# STEP 10 -- COMBINE CORRECTED AND CLEANED DATASETS
+  ## Now we can combine the datasets we've cleaned and manipulated
+  TotalRows <- bind_rows(Corrected_MixedRatios_FolsomSamplerOnly, Corrected_Gridded_LLRRemoved)
+  TotalRows <- bind_rows(TotalRows, Corrected_SingleRatios)  
+  View(TotalRows)  
+  ## Have to create a 'SampleGrouping' identifier for the whole set (e.g., the "Grid_LLRRemoved" portion and "SingleRatio" portion do not include 'SampleGrouping' yet)
+  TotalRows$SampleGrouping <- paste(TotalRows$SIDNO, TotalRows$SiteNumber, TotalRows$CollectionDate, TotalRows$BioDataTaxonName, TotalRows$Lifestage, sep = "_")
+
+
+# STEP 11 -- DOUBLE-CHECK COMBINED DATASHEETS FOR DUPLICATE ENTRIES
+  ## Using the created 'SampleGrouping', which are unique identifiers for sample-by-site-by-date-by-taxon-by-lifestage groupings
+  TotalRows_Dups <- TotalRows[duplicated(TotalRows$SampleGrouping)|duplicated(TotalRows$SampleGrouping, fromLast = TRUE),]
+  View(TotalRows_Dups)  
+    ### Returns 0 observations (rows) with 84 variables (columns)
+  ## Can also find if unique 'SampleGrouping' entries match the total number of entries in the combined dataset
+  uniqueN(TotalRows$SampleGrouping)
+    ### Returns 177610, matching the total number of entries for the combined and corrected dataset  
+
+# STEP 12 -- Write cleaned invertebrate dataset
+  TotalRows <- as.data.frame(TotalRows)
+  write.csv(TotalRows, "/Users/devinkjones/Desktop/USGS BioData_Inverts ONLY/CleanedInvert_NAWQA_IRTH_M_CondensedFolsom.csv", row.names = FALSE, col.names = TRUE, sep = "}")  
+  
+  
