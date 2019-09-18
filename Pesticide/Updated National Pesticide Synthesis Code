@@ -1,0 +1,141 @@
+
+## Other packages should be loaded in through the 'base' package
+
+## Install packages
+install.packages("plyr","dplyr","stringr")
+
+## Load packages
+library(plyr)
+library(dplyr)
+library(stringr)
+
+## Head to the USGS Pesticide National Synthesis Project
+## <https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/>
+  
+## Extract the tables from the URL for each year
+## The data is stored in a .txt format, but columns are divided by the tab "\t" 
+## Using 'header=TRUE' will provide the 1st line in the url table as the column headers (which is what we want)
+Pest.Est.1992 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1992.txt"), sep = "\t", header = TRUE)
+Pest.Est.1993 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1993.txt"), sep = "\t", header = TRUE)
+Pest.Est.1994 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1994.txt"), sep = "\t", header = TRUE)
+Pest.Est.1995 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1995.txt"), sep = "\t", header = TRUE)
+Pest.Est.1996 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1996.txt"), sep = "\t", header = TRUE)
+Pest.Est.1997 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1997.txt"), sep = "\t", header = TRUE)
+Pest.Est.1998 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1998.txt"), sep = "\t", header = TRUE)
+Pest.Est.1999 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.1999.txt"), sep = "\t", header = TRUE)
+Pest.Est.2000 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2000.txt"), sep = "\t", header = TRUE)
+Pest.Est.2001 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2001.txt"), sep = "\t", header = TRUE)
+Pest.Est.2002 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2002.txt"), sep = "\t", header = TRUE)
+Pest.Est.2003 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2003.txt"), sep = "\t", header = TRUE)
+Pest.Est.2004 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2004.txt"), sep = "\t", header = TRUE)
+Pest.Est.2005 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2005.txt"), sep = "\t", header = TRUE)
+Pest.Est.2006 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2006.txt"), sep = "\t", header = TRUE)
+Pest.Est.2007 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2007.txt"), sep = "\t", header = TRUE)
+Pest.Est.2008 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2008.txt"), sep = "\t", header = TRUE)
+Pest.Est.2009 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2009.txt"), sep = "\t", header = TRUE)
+Pest.Est.2010 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2010.txt"), sep = "\t", header = TRUE)
+Pest.Est.2011 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2011.txt"), sep = "\t", header = TRUE)
+Pest.Est.2012 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2012.txt"), sep = "\t", header = TRUE)
+
+## Binding the pesticide estimate tables together
+## First bind includes 2 of the tables, and a table is added to the combined table each step after
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992, Pest.Est.1993)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1994)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1995)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1996)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1997)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1998)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.1999)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2000)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2001)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2002)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2003)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2004)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2005)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2006)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2007)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2008)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2009)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2010)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2011)
+Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2012)
+
+## Replace any 'NA' in the dataset with zeroes
+Pest.Est.1992.2012[is.na(Pest.Est.1992.2012)] <- 0
+
+## Edit dataset to include 2 digits for the StateFIPS and 3 digits for the CountyFIPS
+Pest.Est.1992.2012$STATE_FIPS_CODE <- str_pad(Pest.Est.1992.2012$STATE_FIPS_CODE, 2, pad = "0")
+Pest.Est.1992.2012$COUNTY_FIPS_CODE <- str_pad(Pest.Est.1992.2012$COUNTY_FIPS_CODE, 3, pad = "0")
+
+## Load packages
+install.packages("webchem")
+
+## Load libraries
+library(webchem)
+
+## Open and attach database
+read_excel()
+attach()
+
+## Create vector of unique chemical names
+Compounds <- unique(Pest.Est.1992.2012$COMPOUND)
+
+## Download chemical information from ChemIDPlus (part of the NIH ToxNet)
+## To make 'ci_query' work, I removed the ability of the function to print 'toxicity' (toxicity values) and 'physprop' (physical properties)
+  ### These two output were removed as some webpages for chemical queries did not include either table, creating an error when R tried to download the information
+  ### Edited code can be found in the 'WebChem_Functions.R' file
+for(row in 1:nrow(Compounds)){
+  CI_Chem <- Compounds[row,"Compounds"]
+  CI_ChemicalQuery <- ci_query(paste(CI_Chem[1]), match = "best", type = "name")
+  if(is.na(CI_ChemicalQuery)) next
+  CI_ChemicalCAS <- paste(CI_ChemicalQuery[[1]]$cas, collapse = ";")
+  CI_ChemSynonyms <- paste(CI_ChemicalQuery[[1]]$synonyms, collapse = ";")
+  CI_ChemicalName <- paste(CI_ChemicalQuery[[1]]$name, collapse = ";")
+  CI_ChemicalURL <- paste(CI_ChemicalQuery[[1]]$source_url, collapse = ";")
+  CI_Table <- data.table(CI_ChemicalCAS, CI_ChemSynonyms, CI_ChemicalName, CI_ChemicalURL)
+  CI_Table$Query <- paste(CI_Chem[1])
+  write.table(CI_Table, "C:/Users/Administrator/Desktop/CID1.csv", sep = "}", append = TRUE, quote = FALSE, row.names = FALSE, col.names = !file.exists("C:/Users/Administrator/Desktop/CID1.csv"))
+  print(row)
+  Sys.sleep(2)
+  flush.console()
+}
+
+CI_ChemicalTable <- read.delim("/Users/Administrator/Desktop/CID1.csv", sep ="}")
+
+## Now that we have a list of CAS numbers and synonyms, we can bind it to the 'Compounds' vector
+
+Compounds <- as.data.frame(Compounds)
+CompoundInfo <- left_join(Compounds, CI_ChemicalTable, by = c("Compounds"= "Query"))
+View(CompoundInfo)
+
+## Now we can use the CAS number to extract chemical information and properties from the PAN Pesticides Database
+for(row in 1:nrow(CompoundInfo)){
+     CAS_Query <- CompoundInfo[row,"CI_ChemicalCAS"]
+     Attempts <- 0
+     while(TRUE){
+       ChemicalQuery <- pan_query(CAS_Query, match = 'best', verbose = FALSE)
+       Sys.sleep(2.0)
+       if(!is(ChemicalQuery, "try-error")) ## If this is true (that there is NO error), then next. If false, return to previous.
+             Attempts <- Attempts + 1  ## Here is a maximum of "10" tries to obtain URL output without NA's
+             if(Attempts != 10){
+                 break
+                   }
+         }
+   PANChemicalTable <- ChemicalQuery[1]
+   PANChemicalTable$CAS_Query <- paste(CAS_Query[1])
+   write.table(PANChemicalTable, "C:/Users/Administrator/Desktop/ChemicalInfo_CAS.csv", append = TRUE, quote = FALSE, row.names = FALSE, sep = "}", col.names = !file.exists("C:/Users/Administrator/Desktop/ChemicalInfo_CAS.csv"))
+   print(row)
+   Sys.sleep(2)
+   flush.console()
+}
+
+PANInfo <- read.delim("/Users/Administrator/Desktop/ChemicalInfo_CAS.csv", sep = "}")
+## To remove the extra text from the column names
+names(PANInfo) <- substring(names(PANInfo),10)
+## And because we removed the last column header, we have to add it back in
+names(PANInfo)[76] <- "CAS_Query"
+View(PANInfo)
+## And now bind the Compound ID and PAN chemical property information
+ChemCompound <- left_join(CompoundInfo, PANInfo, by = c("CI_ChemicalCAS" = "CAS_Query"))
+View(ChemCompound)
+
