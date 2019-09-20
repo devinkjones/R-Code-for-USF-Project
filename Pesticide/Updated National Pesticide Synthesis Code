@@ -1,19 +1,16 @@
-## Code to download USGS Pesticide National Synthesis Project
+## USGS Pesticide National Synthesis Project
+## Downloading the raw data
 
 ## Install/Load packages
-## Data wrangling
-library(reshape)
+library(plyr)
 library(dplyr)
-library(rJava)
-library(tidyr)
-library(xlsx)
 library(stringr)
-## Ecotox libraries
+library(utils)
 library(webchem)
+  ### Other functions are drawn from the 'base' package
+
 
 ## Head to the USGS Pesticide National Synthesis Project
-## If multiple years are selected, keep all datasets in the same folder 
-## If you select datasets between 2013-2016, data is still preliminary, so be sure to save/deposit files you use so the results can be replicated even when those files get updated
 ## <https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/>
   
 ## Extract the tables from the URL for each year
@@ -40,6 +37,23 @@ Pest.Est.2009 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/co
 Pest.Est.2010 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2010.txt"), sep = "\t", header = TRUE)
 Pest.Est.2011 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2011.txt"), sep = "\t", header = TRUE)
 Pest.Est.2012 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PesticideUseEstimates/EPest.county.estimates.2012.txt"), sep = "\t", header = TRUE)
+## 2013 and 2014 are preliminary estimates, but can be added using the following
+Pest.Est.2013 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PreliminaryEstimates/EPest.county.estimates.2013.txt"), sep = "\t", header = TRUE)
+Pest.Est.2014 <- read.table(url("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PreliminaryEstimates/EPest.county.estimates.2014.txt"), sep = "\t", header = TRUE)
+## 2015 and 2016 are preliminary estimates, and are stored as .zip files on the USGS PNSP website
+## 2015
+temp <- tempfile()
+ZipFile <- download.file("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PreliminaryEstimates/2015PreliminaryEstimates.zip", temp)
+Pest.Est.2015 <- read.table(File1 <- unz(temp, "2015PreliminaryEstimates/EPest.county.estimates.2015.txt"), sep = "\t", header = TRUE, na.strings = NA)
+unlink(temp)
+View(Pest.Est.2015)
+## 2016
+temp <- tempfile()
+ZipFile <- download.file("https://water.usgs.gov/nawqa/pnsp/usage/maps/county-level/PreliminaryEstimates/2016PreliminaryEstimates.zip", temp)
+## USGS labeled zipfile as 2106PreliminaryEstimates (instead of 2016)
+Pest.Est.2016 <- read.table(File1 <- unz(temp, "2106PreliminaryEstimates/EPest.county.estimates.2016.txt"), sep = "\t", header = TRUE, na.strings = NA)
+unlink(temp)
+View(Pest.Est.2016)
 
 ## Binding the pesticide estimate tables together
 ## First bind includes 2 of the tables, and a table is added to the combined table each step after
@@ -63,22 +77,44 @@ Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2009)
 Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2010)
 Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2011)
 Pest.Est.1992.2012 <- rbind(Pest.Est.1992.2012, Pest.Est.2012)
+## Split here to remind use that 2013-2016 are preliminary estimate years
+Pest.Est.1992.2016 <- rbind(Pest.Est.1992.2012, Pest.Est.2013)
+Pest.Est.1992.2016 <- rbind(Pest.Est.1992.2012, Pest.Est.2014)
+Pest.Est.1992.2016 <- rbind(Pest.Est.1992.2012, Pest.Est.2015)
+Pest.Est.1992.2016 <- rbind(Pest.Est.1992.2012, Pest.Est.2016)
+
 
 ## Replace any 'NA' in the dataset with zeroes
 Pest.Est.1992.2012[is.na(Pest.Est.1992.2012)] <- 0
+Pest.Est.1992.2016[is.na(Pest.Est.1992.2016)] <- 0
 
-## Extend the length of 'COUNTY_FIPS_CODE' to 3 digits; Have to do this or we'll not be able to mesh site/biota/pesticide datasets
-## Extend the length of 'STATE_FIPS_CODE' to 2 digits
+## Edit dataset to include 2 digits for the StateFIPS and 3 digits for the CountyFIPS
 Pest.Est.1992.2012$STATE_FIPS_CODE <- str_pad(Pest.Est.1992.2012$STATE_FIPS_CODE, 2, pad = "0")
 Pest.Est.1992.2012$COUNTY_FIPS_CODE <- str_pad(Pest.Est.1992.2012$COUNTY_FIPS_CODE, 3, pad = "0")
 
-## Create a variable the includes 'YEAR'+'STATE_FIPS_CODE'+'COUNTY_FIPS_CODE'
-## With this, we should be able to match variables from 'CollectionSite' dataset and the 'InvertebrateBioData' dataset
-cols<- c("YEAR","STATE_FIPS_CODE","COUNTY_FIPS_CODE")
-Pest.Est.1992.2012$YEAR_STATE_COUNTY <- do.call(paste, c(Pest.Est.1992.2012[cols], sep = "_"))
+Pest.Est.1992.2016$STATE_FIPS_CODE <- str_pad(Pest.Est.1992.2016$STATE_FIPS_CODE, 2, pad = "0")
+Pest.Est.1992.2016$COUNTY_FIPS_CODE <- str_pad(Pest.Est.1992.2016$COUNTY_FIPS_CODE, 3, pad = "0")
+
+## Add in variable to combine Year, State FIPS, County FIPS
+Pest.Est.1992.2012$Year_State_County <- paste(Pest.Est.1992.2012$YEAR, Pest.Est.1992.2012$STATE_FIPS_CODE, Pest.Est.1992.2012$COUNTY_FIPS_CODE, sep = "_")
+Pest.Est.1992.2016$Year_State_County <- paste(Pest.Est.1992.2016$YEAR, Pest.Est.1992.2016$STATE_FIPS_CODE, Pest.Est.1992.2016$COUNTY_FIPS_CODE, sep = "_")
+
+## Can filter out annual use for given pesticides from specific states
+## Example below is for 'PERMETHRIN' from Florida (STATE_FIPS == 12)
+Florida_Permethrin <- filter(Pest.Est.1992.2016, STATE_FIPS_CODE == "12", COMPOUND == "PERMETHRIN")
+View(Florida_Permethrin)
+
+## Can filter out annual use for given pesticides 
+## Example below is for 'CARBARYL' 'CHLORPYRIFOS' and 'DIAZINON' 
+CarbChlorDiaz <- filter(Pest.Est.1992.2016, COMPOUND == "CARBARYL" | COMPOUND == "CHLORPYRIFOS" | COMPOUND == "DIAZINON")
+View(CarbChlorDiaz)
+
+
+------
+# Dowloading ecotoxicology and chemical parameters using 'webchem' and 'ecotox' based on the compounds present in the dataset
 
 ## Create vector of unique chemical names
-Compounds <- unique(Pest.Est.1992.2012$COMPOUND)
+Compounds <- unique(Pest.Est.1992.2016$COMPOUND)
 
 ## Download chemical information from ChemIDPlus (part of the NIH ToxNet)
 ## To make 'ci_query' work, I removed the ability of the function to print 'toxicity' (toxicity values) and 'physprop' (physical properties)
@@ -130,7 +166,6 @@ for(row in 1:nrow(CompoundInfo)){
 }
 
 PANInfo <- read.delim("/Users/Administrator/Desktop/ChemicalInfo_CAS.csv", sep = "}")
-
 
 ## To remove the extra text from the column names
 names(PANInfo) <- substring(names(PANInfo),10)
