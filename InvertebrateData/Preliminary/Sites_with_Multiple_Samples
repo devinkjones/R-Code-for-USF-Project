@@ -1,0 +1,891 @@
+---
+title: "Invertebrate -- Sites with Multiple Samples"
+author: "DKJ"
+date: "9/2019"
+editor_options:
+  chunk_output_type: inline
+---
+
+## Data libraries
+```{r, warning=FALSE, error=FALSE, message=FALSE}
+# Load in libraries (and dependencies)
+  library(dplyr)
+  library(dbplyr)
+  library(stringr)
+  library(rJava)
+  library(xlsx)
+  library(readxl)
+  library(reshape2)
+  library(data.table)
+  library(tidyverse)
+  library(tidyr)
+  library(zoo)
+  library(doBy)
+  library(vegan)
+  library(ggforce)
+  library(ggpmisc)
+  library(ggplot2)
+  library(MazamaSpatialUtils)
+  ## https://github.com/MazamaScience/MazamaSpatialUtils
+  library(lme4)
+  library(benthos)
+  library(rmarkdown)
+
+```
+
+## Set output options
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 113)
+```
+
+## Load in datasets
+```{r}
+## Read in the invertebrate dataset
+## MAC
+  TotalRows_FFG <- read.csv("~/Desktop/USGS_BioData_Inverts_ONLY/CleanedDatasets/TotalRows_FFG.csv")
+  BioDataSites_SiteInfo_Micro_Sample <- read_csv("~/Desktop/USGS_BioData_Inverts_ONLY/CleanedDatasets/BioDataSites_SiteInfo_Micro_Sample.csv")
+## PC
+  #TotalRows_FFG <- read.csv("C:/Users/Administrator/Desktop/USGS BIODATA/20190429.1101.BioData/CleanedDataSets/TotalRows_FFG.csv")
+  #BioDataSites_SiteInfo_Micro_Sample <- read.csv("C:/Users/Administrator/Desktop/USGS BIODATA/20190429.1101.BioData/CleanedDataSets/BioDataSites_SiteInfo_Micro_Sample.csv")
+```
+
+## Add Site Information (State, County, FIPS Codes, Lat and Long, HUC2) to the Invert dataset
+```{r}
+## Subset a few columns from the 'BioDataSites' to add to the 'TotalRows_FFG'
+  SiteCols <- BioDataSites_SiteInfo_Micro_Sample[,c(1,23:28,30)]
+  TotalRows_FFG_Sites <- left_join(TotalRows_FFG, SiteCols, by = "SIDNO")
+
+## Adding HUC2 Codes to Datasets
+## install.packages("MazamaSpatialUtils")
+  Site_Lat_Long <- TotalRows_FFG_Sites[,c(1,95:96)]
+  Site_Lat_Long1 <- unique(Site_Lat_Long)
+
+  load("/Users/devinkjones/Desktop/USGS_BioData_Inverts_ONLY/PrelimGraphs/WBDHU2.RData") 
+## Downloaded from "http://mazamascience.com/RData/Spatial/"
+  HUC2 <- getHUC(lat = Site_Lat_Long1$Latitude_dd, lon = Site_Lat_Long1$Longitude_dd, dataset = "WBDHU2")
+  HUC2 <- as.data.frame(HUC2)
+  names(HUC2) <- "HUC_Code_2"
+  Site_Lat_Long2 <- cbind(Site_Lat_Long1, HUC2)
+  Site_Lat_Long2$HUC_Code_2 <- as.factor(Site_Lat_Long2$HUC_Code_2)
+  HUC2Codes <- unique(HUC2$HUC_Code_2)
+  HUC2Codes <- as.data.frame(HUC2Codes)
+  HUC2Codes$HUC2Codes <- as.factor(HUC2Codes$HUC2Codes)
+  HUC2Codes <- HUC2Codes[order(HUC2Codes),]
+  HUC2Codes <- as.data.frame(HUC2Codes)
+  HUC2Region <- c("New England Region",	"Mid-Atlantic Region",	"South Atlantic-Gulf Region", "Great Lakes Region",	"Ohio Region",	"Tennessee Region",	"Upper Mississippi Region",	"Lower Mississippi Region",	"Souris-Red-Rainy Region",	"Missouri Region",	"Arkansas-White-Red Region",	"Texas-Gulf Region",	"Rio Grande Region",	"Upper Colorado Region",	"Lower Colorado Region",	"Great Basin Region",	"Pacific Northwest Region",	"California Region",	"Alaska Region",	"Hawaii Region")
+  HUC2CodeRegions <- cbind(HUC2Codes,HUC2Region)
+  HUC2CodeRegions <- as.data.frame(HUC2CodeRegions)
+  Site_Lat_Long2 <- left_join(Site_Lat_Long2, HUC2CodeRegions, by = c("HUC_Code_2" = "HUC2Codes"))
+  Site_Lat_Long2$HUC2Names <- paste(Site_Lat_Long2$HUC_Code_2, Site_Lat_Long2$HUC2Region, sep = "-")
+  Site_Lat_Long2$HUC2Names <- as.factor(Site_Lat_Long2$HUC2Names)
+  TotalRows_FFG_Sites1 <- left_join(TotalRows_FFG_Sites, Site_Lat_Long2, by = "SIDNO")
+  TotalRows_FFG_Sites1$SiteNumber <- as.factor(TotalRows_FFG_Sites1$SiteNumber)
+```
+
+## Determine the sites that have multiple samples
+```{r}
+  MultipleSamples <- TotalRows_FFG_Sites1 %>% group_by(SiteNumber) %>% filter(n_distinct(CollectionDate) >= 2)
+
+## Remove Alaska and Hawaii from the dataset to focus on the lower 48 states
+## Remove 2017 and 2018 as invertebrate records are only up-to-date to 2016
+  MultipleSamples1 <- MultipleSamples %>% filter(State != "Alaska")
+  MultipleSamples2 <- MultipleSamples1 %>% filter(State != "Hawaii")
+  MultipleSamples3 <- MultipleSamples2 %>% filter(CollectionYear != "2017")
+  MultipleSamples4 <- MultipleSamples3 %>% filter(CollectionYear != "2018")
+  str(MultipleSamples4, give.attr = FALSE)
+  uniqueN(MultipleSamples4$SiteNumber)
+  
+  TimesSampled <- MultipleSamples4 %>% group_by(SiteNumber) %>% summarize(Number_Of_Samples = uniqueN(CollectionDate))
+  TimesSampled <- as.data.frame(TimesSampled)
+  range(TimesSampled$Number_Of_Samples)
+  histogram(TimesSampled$Number_Of_Samples)
+  View(TimesSampled)
+```
+
+# *Invertebrate Dataset -- Sites with Multiple Samples*
+
+## **GENUS**
+
+```{r}
+## Using 'MultipleSamples4' from above steps
+
+## Genus-level entries in 'MultipleSamples'
+  Genus_Entries <- MultipleSamples4 %>% group_by(SiteNumber) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+  head(Genus_Entries)
+  colSums(Genus_Entries[,2:4])
+  
+## Recast MultipleSamples to calculate Genus-level responses
+  Genus_Abundance <- dcast(Identifier ~ Genus, data = MultipleSamples4, value.var = "Abundance", fun.aggregate = sum)
+  names(Genus_Abundance)[2] <- "NA_Entries"
+  View(Genus_Abundance)
+
+  Genus_Abundance$Genus_TotalAbundance <- rowSums(Genus_Abundance[,2:623])
+  Genus_Abundance$Genus_TotalAbundance_NoNA <- rowSums(Genus_Abundance[,3:623])
+  Genus_Abundance$Genus_Richness <- specnumber(Genus_Abundance[,3:623])
+  Genus_Abundance$Genus_ShannonDiversity <- diversity(Genus_Abundance[,3:623], index = "shannon")
+  Genus_Abundance$Genus_expShannonDiversity <- exp(Genus_Abundance$Genus_ShannonDiversity)
+  Genus_Abundance$Genus_Simpsons <- diversity(Genus_Abundance[,3:623], index = "simpson")
+  Genus_Abundance$Genus_InverseSimpsons <- diversity(Genus_Abundance[,3:623], index = "inv")
+## Evenness measures
+  Genus_Abundance$Genus_PilouEvenness <- (Genus_Abundance$Genus_ShannonDiversity)/(log(Genus_Abundance$Genus_Richness))  
+## Rarefy -- BASED UPON THE MINIMUM # AT A SITE
+  (Ge_raremax <- min(rowSums(Genus_Abundance[,3:623])))
+  Genus_Abundance$Genus_Srare <- rarefy(Genus_Abundance[,3:623], Ge_raremax)
+## Rarefy -- BASED UPON THE ACTUAL # AT A SITE
+  Genus_Abundance$Genus_Srare_Total <- rarefy(Genus_Abundance[,3:623], rowSums(Genus_Abundance[,3:623]))
+## Hurlbert's PIE calculation
+  ### Hurlbert's PIE is calculated with 'Genus' entries
+  Genus_NoNA_Dataset <- MultipleSamples4 %>% filter(Genus != "")
+  Genus_NoNA_Dataset$Genus <- as.character(Genus_NoNA_Dataset$Genus)
+  Genus_NoNA_Dataset$Abundance <- as.numeric(Genus_NoNA_Dataset$Abundance)
+  Genus_HPIE <- Genus_NoNA_Dataset %>% group_by(Identifier) %>% summarize(Genus_HPIE = hpie(taxon = Genus, count = Abundance))
+  Genus_Abundance <- left_join(Genus_Abundance, Genus_HPIE, by = "Identifier")
+
+## Subset calculated columns  
+  cols1 <- Genus_Abundance[,c(1,624:633)]
+  names(cols1)
+```
+
+```{r}  
+  MultipleSamples_Sites <- subset(BioDataSites_SiteInfo_Micro_Sample, GroupingVariable %in% Genus_Abundance$Identifier)
+  Invert_MultipleSamples <- left_join(MultipleSamples_Sites, cols1, by = c("GroupingVariable" = "Identifier"))
+  
+## Have to add HUC2 Zones to the reduced 'Invert_MultipleSamples'
+load("/Users/devinkjones/Desktop/USGS_BioData_Inverts_ONLY/PrelimGraphs/WBDHU2.rdata")
+HUC2 <- getHUC(lat = Invert_MultipleSamples$Latitude_dd, lon = Invert_MultipleSamples$Longitude_dd, dataset = "WBDHU2")
+HUC2 <- as.data.frame(HUC2)
+names(HUC2) <- "HUC_Code_2"
+MultipleSite_HUC2 <- cbind(Invert_MultipleSamples, HUC2)
+MultipleSite_HUC2$HUC_Code_2 <- as.factor(MultipleSite_HUC2$HUC_Code_2)
+
+HUC2Codes <- unique(HUC2$HUC_Code_2)
+HUC2Codes <- as.data.frame(HUC2Codes)
+HUC2Codes$HUC2Codes <- as.factor(HUC2Codes$HUC2Codes)
+HUC2Codes <- HUC2Codes[order(HUC2Codes),]
+HUC2Codes <- as.data.frame(HUC2Codes)
+HUC2Region <- c("New England Region",	"Mid-Atlantic Region",	"South Atlantic-Gulf Region", "Great Lakes Region",	"Ohio Region",	"Tennessee Region",	"Upper Mississippi Region",	"Lower Mississippi Region",	"Souris-Red-Rainy Region",	"Missouri Region",	"Arkansas-White-Red Region",	"Texas-Gulf Region",	"Rio Grande Region",	"Upper Colorado Region",	"Lower Colorado Region",	"Great Basin Region",	"Pacific Northwest Region",	"California Region")
+HUC2CodeRegions <- cbind(HUC2Codes,HUC2Region)
+HUC2CodeRegions <- as.data.frame(HUC2CodeRegions)
+
+MultipleSite_HUC2 <- left_join(MultipleSite_HUC2, HUC2CodeRegions, by = c("HUC_Code_2" = "HUC2Codes"))
+MultipleSite_HUC2$HUC2Names <- paste(MultipleSite_HUC2$HUC_Code_2, MultipleSite_HUC2$HUC2Region, sep = "-")
+MultipleSite_HUC2$HUC2Names <- as.factor(MultipleSite_HUC2$HUC2Names)
+MultipleSite_HUC2$SiteNumber <- as.character(as.numeric(MultipleSite_HUC2$SiteNumber))
+View(MultipleSite_HUC2)
+```
+
+# Create maps using 'MultipleSite_HUC2' data
+```{r}
+## Load in base map data to then plot data to
+## Base map data
+usa <- map_data("usa")
+states <- map_data("state")
+
+US_Base <- ggplot(data = usa) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "black", fill = "black") +
+  geom_path(data = states, aes(x = long, y = lat, group = group), color = "white") +
+  coord_fixed(xlim = c(-125,-65), ylim = c(25,50), ratio = 1.3)
+US_Base
+
+State_Base <- ggplot(data = states) + 
+  geom_polygon(aes(x = long, y = lat, group = group)) +
+  coord_fixed(xlim = c(-125,-65), ylim = c(25,50), ratio = 1.3)
+State_Base
+```
+
+```{r}
+## Plot collection site locations over years
+## "coord_fixed" limits the window of the plots, and the ratio fixes the long/lat to stretch the US properly
+## "facet_wrap" separates the graphs by year and plots them separately
+SiteCountPerYear <- Invert_MultipleSamples %>% group_by(CollectionYear) %>% summarize(n = length(SiteNumber))
+SiteCountPerYear <- as.data.frame(SiteCountPerYear)
+SiteCountPerYear
+plot(SiteCountPerYear$CollectionYear,SiteCountPerYear$n, main="Samples Per Year", xlab="Collection Year", ylab="Number of Samples", pch=19)
+
+SitesPerYear <- ggplot(data = states) + 
+  geom_polygon(aes(x = long, y = lat, group = group)) +
+  coord_fixed(xlim = c(-125,-65), ylim = c(25,50), ratio = 1.3) + 
+  guides(fill = FALSE) +
+  geom_point(data = Invert_MultipleSamples, aes(x = Longitude_dd, y = Latitude_dd), color = "yellow", size = .2) +
+  facet_wrap( ~ CollectionYear, nrow = 6, ncol = 5, drop = FALSE) +
+  geom_text(data = SiteCountPerYear, aes(x = -124, y = 27, label = n), size = 4)
+SitesPerYear
+
+## Plot Collection Sites with Mulitple Samples (n = 485)
+Sites_MultipleSamples <- MultipleSite_HUC2[,c("SiteNumber","Latitude_dd","Longitude_dd")]
+Sites_MultipleSamples1 <- unique(Sites_MultipleSamples)
+View(Sites_MultipleSamples1)
+
+MulitpleSampleSites <- US_Base+
+  geom_point(data = Sites_MultipleSamples1, aes(x = Longitude_dd, y = Latitude_dd), color = "yellow", size = .2)
+MulitpleSampleSites
+
+## sbbox <- make_bbox(lon = usa$long, lat = usa$lat, f = .1)
+## sq_map <- get_map(location = sbbox, maptype = "satellite", source = "google")
+## ggmap(sq_map) + geom_point(data = Sites_MultipleSamples1, aes(x = Longitude_dd, y = Latitude_dd), color = "yellow", size = 1)
+
+```
+
+## LM plotting and analyses function code
+```{r}
+## Code to plot and fit 'lm' to data
+ggplotRegression <- function(fit) {
+require(ggplot2)
+ggplot(data = as.data.frame(fit$model), aes(x = fit$model[[2]], y = fit$model[[1]])) +
+geom_point() +
+stat_smooth(method = "lm", col = "blue") +
+labs(title = paste( "adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
+                    "Intercept = ",signif(fit$coef[[1]], 5),
+                    "Slope = ",signif(fit$coef[[2]], 5),
+                    "P = ", signif(summary(fit)$coef[2,4],5))
+     )
+}
+## ggplotRegression(model)
+```
+
+### 'Genus-Abundance'
+```{r}
+## Plot 'Genus_TotalAbundance_NoNA' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = log(Genus_TotalAbundance_NoNA))) +
+        geom_point(color = "black") +
+        ggtitle("Log-transformed Total Abundance (NoNA) over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,12.5))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Genus_TotalAbundance_NoNA' 
+lm_Ge_Abun <- lm(data = MultipleSite_HUC2, formula = log(Genus_TotalAbundance_NoNA) ~ CollectionYear)
+summary(lm_Ge_Abun)
+ggplotRegression(lm_Ge_Abun)
+
+lm1 <- lmer(data =MultipleSite_HUC2, log(Genus_TotalAbundance_NoNA) ~ CollectionYear + (1|SiteNumber))
+summary(lm1)
+```
+
+### 'Genus_Richness'
+```{r}
+## Plot 'Genus_Richness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_Richness)) +
+        geom_point(color = "black") +
+        ggtitle("Richness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,50))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Genus_Richness'
+lm_Ge_Richness <- lm(data = MultipleSite_HUC2, formula = Genus_Richness ~ CollectionYear)
+summary(lm_Ge_Richness)
+ggplotRegression(lm_Ge_Richness)
+
+lm2 <- lmer(data =MultipleSite_HUC2, Genus_Richness ~ CollectionYear + (1|SiteNumber))
+summary(lm2)
+```
+
+## Genus Rarefaction
+```{r, echo = FALSE, eval= FALSE} 
+## Example to coopt for our data
+data(BCI)
+S <- specnumber(BCI) # observed number of species
+(raremax <- min(rowSums(BCI)))
+Srare <- rarefy(BCI, raremax)
+plot(S, Srare, xlab = "Observed No. of Species", ylab = "Rarefied No. of Species")
+abline(0, 1)
+rarecurve(BCI, step = 20, sample = raremax, col = "blue", cex = 0.6)
+```
+
+```{r}
+## Function 'rarefy' gives the expected species richness in random subsamples of size sample from the community. If sample is a vector, rarefaction of all observations is performed for each sample size separately.
+  plot(Genus_Abundance$Genus_Richness, Genus_Abundance$Srare, xlab = "Observed No. of Genus", ylab = "Rarefied No. of Genus")
+  abline(0,1)
+  rarecurve(Genus_Abundance[,3:623], step = 20, sample = raremax, col = "blue", cex = 0.5)
+  ## To use rarefaction curve with log-transformed data
+  ## Genus_LogAbundance <- log(Genus_Abundance[,3:623]+1)
+  ## Genus_LogAbundance <- sapply(Genus_LogAbundance, as.integer)
+  ## rarecurve(Genus_LogAbundance, step = 20, sample = raremax, col = "blue", cex = 0.5, xlab = "Log-transformed Sample Size")
+  
+  
+## Plot 'Genus_Srare' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_Srare)) +
+        geom_point(color = "black") +
+        ggtitle("Srare over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,10))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Genus_Srare'
+lm_Ge_Srare <- lm(data = MultipleSite_HUC2, formula = Genus_Srare ~ CollectionYear)
+summary(lm_Ge_Srare)
+ggplotRegression(lm_Ge_Srare)
+
+lm_Ge_Srare_Site <- lmer(data =MultipleSite_HUC2, Genus_Srare ~ CollectionYear + (1|SiteNumber))
+summary(lm_Ge_Srare_Site)
+```
+
+## Pielou's Evenness
+```{r}
+## Plot 'Genus_PilouEvenness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_PilouEvenness)) +
+        geom_point(color = "black") +
+        ggtitle("Pielou's Evenness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Genus_PilouEvenness'
+lm_Ge_PE <- lm(data = MultipleSite_HUC2, formula = Genus_PilouEvenness ~ CollectionYear)
+summary(lm_Ge_PE)
+ggplotRegression(lm_Ge_PE)
+
+lm_Ge_PE_Site <- lmer(data =MultipleSite_HUC2, Genus_PilouEvenness ~ CollectionYear + (1|SiteNumber))
+summary(lm_Ge_PE_Site)
+
+```
+
+## Hurlbert's Probability of Interspecific Encounter (PIE)
+```{r}
+## Plot 'Genus_HPIE' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_HPIE)) +
+        geom_point(color = "black") +
+        ggtitle("Hurlbert's PIE over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Genus_HPIE'
+lm_Ge_HPIE <- lm(data = MultipleSite_HUC2, formula = Genus_HPIE ~ CollectionYear)
+summary(lm_Ge_HPIE)
+ggplotRegression(lm_Ge_HPIE)
+
+lm_Ge_HPIE_Site <- lmer(data =MultipleSite_HUC2, Genus_HPIE ~ CollectionYear + (1|SiteNumber))
+summary(lm_Ge_HPIE_Site)
+
+```
+
+## 'Genus_expShannonDiversity' 
+```{r}
+## Plot 'Genus_expShannonDiversity' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_expShannonDiversity)) +
+        geom_point(color = "black") +
+        ggtitle("(exp)Shannon Diversity over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,30))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Genus_expShannonDiversity'
+lm_Ge_expSD <- lm(data = MultipleSite_HUC2, formula = Genus_expShannonDiversity ~ CollectionYear)
+summary(lm_Ge_expSD)
+ggplotRegression(lm_Ge_expSD)
+
+lm3 <- lmer(data = MultipleSite_HUC2, Genus_expShannonDiversity ~ CollectionYear + (1|SiteNumber))
+summary(lm3)
+```
+
+### 'Genus_InverseSimpsons'
+```{r}
+## Plot 'Genus_InverseSimpsons' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2, 
+        mapping = aes(x = CollectionYear, y = Genus_InverseSimpsons)) +
+        geom_point(color = "black") +
+        ggtitle("Inverse Simpson Indeces over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,20))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Genus_InverseSimpson'
+lm_Ge_InvSimp <- lm(data = MultipleSite_HUC2, formula = Genus_InverseSimpsons ~ CollectionYear)
+summary(lm_Ge_InvSimp)
+ggplotRegression(lm_Ge_InvSimp)
+
+lm4 <- lmer(data =MultipleSite_HUC2, Genus_InverseSimpsons ~ CollectionYear + (1|SiteNumber))
+summary(lm4)
+```
+
+
+# **ORDER**
+
+```{r}
+## Order-level entries in 'MultipleSamples'
+  Order_Entries <- MultipleSamples4 %>% summarize(OrderEntries = sum(Order != ""), NA_OrderEntries = sum(Order == ""), Total_OrderEntries = length(Order))
+  Order_Entries
+  colSums(Order_Entries[,2:4])
+  
+## Recast MultipleSamples to calculate Order-level responses
+  Order_Abundance <- dcast(Identifier ~ Order, data = MultipleSamples4, value.var = "Abundance", fun.aggregate = sum)
+  names(Order_Abundance)[2] <- "NA_Entries"
+  View(Order_Abundance)
+
+  Order_Abundance$Order_TotalAbundance <- rowSums(Order_Abundance[,2:37])
+  Order_Abundance$Order_TotalAbundance_NoNA <- rowSums(Order_Abundance[,3:37])
+  Order_Abundance$Order_Richness <- specnumber(Order_Abundance[,3:37])
+  Order_Abundance$Order_ShannonDiversity <- diversity(Order_Abundance[,3:37], index = "shannon")
+  Order_Abundance$Order_expShannonDiversity <- exp(Order_Abundance$Order_ShannonDiversity)
+  Order_Abundance$Order_Simpsons <- diversity(Order_Abundance[,3:37], index = "simpson")
+  Order_Abundance$Order_InverseSimpsons <- diversity(Order_Abundance[,3:37], index = "inv")
+
+## Evenness measures
+  Order_Abundance$Order_PilouEvenness <- (Order_Abundance$Order_ShannonDiversity)/(log(Order_Abundance$Order_Richness))  
+## Rarefy
+  (Or_raremax <- min(rowSums(Order_Abundance[,3:37])))
+  Order_Abundance$Order_Srare <- rarefy(Order_Abundance[,3:37], Or_raremax)
+## Hurlbert's PIE calculation
+  ### Hurlbert's PIE is calculated with 'Order' entries
+  Order_NoNA_Dataset <- MultipleSamples4 %>% filter(Order != "")
+  Order_NoNA_Dataset$Order <- as.character(Order_NoNA_Dataset$Order)
+  Order_NoNA_Dataset$Abundance <- as.numeric(Order_NoNA_Dataset$Abundance)
+  Order_HPIE <- Order_NoNA_Dataset %>% group_by(Identifier) %>% summarize(Order_HPIE = hpie(taxon = Order, count = Abundance))
+  Order_Abundance <- left_join(Order_Abundance, Order_HPIE, by = "Identifier")
+
+## Subset calculated columns  
+  cols2 <- Order_Abundance[,c(1,38:47)]
+  names(cols2)
+  
+  MultipleSite_HUC2_A <- left_join(MultipleSite_HUC2, cols2, by = c("GroupingVariable" = "Identifier"))
+  View(MultipleSite_HUC2_A)
+```
+
+### 'Order_Abundance'
+```{r}
+## Plot 'Order_TotalAbundance_NoNA' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = log(Order_TotalAbundance_NoNA))) +
+        geom_point(color = "black") +
+        ggtitle("Log-transformed Total Abundance (NoNA) over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(2,14))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Order_TotalAbundance_NoNA' 
+lm_Or_Abun <- lm(data = MultipleSite_HUC2_A, formula = log(Order_TotalAbundance_NoNA) ~ CollectionYear)
+summary(lm_Or_Abun)
+ggplotRegression(lm_Or_Abun)
+
+lm1 <- lmer(data =MultipleSite_HUC2_A, log(Order_TotalAbundance_NoNA) ~ CollectionYear + (1|SiteNumber))
+summary(lm1)
+```
+
+### 'Order_Richness'
+```{r}
+## Plot 'Order_Richness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_Richness)) +
+        geom_point(color = "black") +
+        ggtitle("Richness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,20))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Order_Richness'
+lm_Or_Richness <- lm(data = MultipleSite_HUC2_A, formula = Order_Richness ~ CollectionYear)
+summary(lm_Or_Richness)
+ggplotRegression(lm_Or_Richness)
+
+lm2 <- lmer(data =MultipleSite_HUC2_A, Order_Richness ~ CollectionYear + (1|SiteNumber))
+summary(lm2)
+```
+
+
+## Order Rarefaction
+```{r}
+## Function 'rarefy' gives the expected species richness in random subsamples of size sample from the community. If sample is a vector, rarefaction of all observations is performed for each sample size separately.
+  plot(Order_Abundance$Order_Richness, Order_Abundance$Order_Srare, xlab = "Observed No. of Order", ylab = "Rarefied No. of Order")
+  abline(0,1)
+  rarecurve(Order_Abundance[,3:37], step = 20, sample = raremax, col = "blue", cex = 0.5)
+  
+## Plot 'Order_Srare' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_Srare)) +
+        geom_point(color = "black") +
+        ggtitle("Srare over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,10))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Order_Srare'
+lm_Or_Srare <- lm(data = MultipleSite_HUC2_A, formula = Order_Srare ~ CollectionYear)
+summary(lm_Or_Srare)
+ggplotRegression(lm_Or_Srare)
+
+lm_Or_Srare_Site <- lmer(data =MultipleSite_HUC2_A, Order_Srare ~ CollectionYear + (1|SiteNumber))
+summary(lm_Or_Srare_Site)
+```
+
+## Pielou's Evenness
+```{r}
+## Plot 'Order_ PilouEvenness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_PilouEvenness)) +
+        geom_point(color = "black") +
+        ggtitle("Pielou Evenness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Order_ PilouEvenness'
+lm_Or_PE <- lm(data = MultipleSite_HUC2_A, formula = Order_PilouEvenness ~ CollectionYear)
+summary(lm_Or_PE)
+ggplotRegression(lm_Or_PE)
+
+lm_Or_PE_Site <- lmer(data =MultipleSite_HUC2_A, Order_PilouEvenness ~ CollectionYear + (1|SiteNumber))
+summary(lm_Or_PE_Site)
+
+```
+
+## Hurlbert's Probability of Interspecific Encounter (PIE)
+```{r}
+## Plot 'Order_HPIE' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_HPIE)) +
+        geom_point(color = "black") +
+        ggtitle("Hurlbert's PIE over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Order_HPIE'
+lm_Or_HPIE <- lm(data = MultipleSite_HUC2_A, formula = Order_HPIE ~ CollectionYear)
+summary(lm_Or_HPIE)
+ggplotRegression(lm_Or_HPIE)
+
+lm_Or_HPIE_Site <- lmer(data =MultipleSite_HUC2_A, Order_HPIE ~ CollectionYear + (1|SiteNumber))
+summary(lm_Or_HPIE_Site)
+
+```
+
+## 'Order_expShannonDiversity' 
+```{r}
+## Plot 'Order_expShannonDiversity' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_expShannonDiversity)) +
+        geom_point(color = "black") +
+        ggtitle("(exp)Shannon Diversity over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,10))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Order_expShannonDiversity'
+lm_Or_expSD <- lm(data = MultipleSite_HUC2_A, formula = Order_expShannonDiversity ~ CollectionYear)
+summary(lm_Or_expSD)
+ggplotRegression(lm_Or_expSD)
+
+lm3 <- lmer(data = MultipleSite_HUC2_A, Order_expShannonDiversity ~ CollectionYear + (1|SiteNumber))
+summary(lm3)
+```
+
+### 'Order_InverseSimpsons'
+```{r}
+## Plot 'Order_InverseSimpsons' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Order_InverseSimpsons)) +
+        geom_point(color = "black") +
+        ggtitle("Inverse Simpson Indeces over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,7.5))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Order_InverseSimpson'
+lm_Or_InvSimp <- lm(data = MultipleSite_HUC2_A, formula = Order_InverseSimpsons ~ CollectionYear)
+summary(lm_Or_InvSimp)
+ggplotRegression(lm_Or_InvSimp)
+
+lm4 <- lmer(data = MultipleSite_HUC2_A, Order_InverseSimpsons ~ CollectionYear + (1|SiteNumber))
+summary(lm4)
+```
+
+
+# **FAMILY**
+
+```{r}
+## Family-level entries in 'MultipleSamples'
+  Family_Entries <- MultipleSamples4 %>% summarize(FamilyEntries = sum(Family != ""), NA_FamilyEntries = sum(Family == ""), Total_FamilyEntries = length(Family))
+  Family_Entries
+  colSums(Family_Entries[,2:4])
+  
+## Recast MultipleSamples to calculate Family-level responses
+  Family_Abundance <- dcast(Identifier ~ Family, data = MultipleSamples4, value.var = "Abundance", fun.aggregate = sum)
+  names(Family_Abundance)[2] <- "NA_Entries"
+  View(Family_Abundance)
+
+  Family_Abundance$Family_TotalAbundance <- rowSums(Family_Abundance[,2:170])
+  Family_Abundance$Family_TotalAbundance_NoNA <- rowSums(Family_Abundance[,3:170])
+  Family_Abundance$Family_Richness <- specnumber(Family_Abundance[,3:170])
+  Family_Abundance$Family_ShannonDiversity <- diversity(Family_Abundance[,3:170], index = "shannon")
+  Family_Abundance$Family_expShannonDiversity <- exp(Family_Abundance$Family_ShannonDiversity)
+  Family_Abundance$Family_Simpsons <- diversity(Family_Abundance[,3:170], index = "simpson")
+  Family_Abundance$Family_InverseSimpsons <- diversity(Family_Abundance[,3:170], index = "inv")
+  
+## Evenness measures
+  Family_Abundance$Family_PilouEvenness <- (Family_Abundance$Family_ShannonDiversity)/(log(Family_Abundance$Family_Richness))  
+## Rarefy
+  (Fa_raremax <- min(rowSums(Family_Abundance[,3:170])))
+  Family_Abundance$Family_Srare <- rarefy(Family_Abundance[,3:170], Fa_raremax)
+## Hurlbert's PIE calculation
+  ### Hurlbert's PIE is calculated with 'Family' entries
+  Family_NoNA_Dataset <- MultipleSamples4 %>% filter(Family != "")
+  Family_NoNA_Dataset$Family <- as.character(Family_NoNA_Dataset$Family)
+  Family_NoNA_Dataset$Abundance <- as.numeric(Family_NoNA_Dataset$Abundance)
+  Family_HPIE <- Family_NoNA_Dataset %>% group_by(Identifier) %>% summarize(Family_HPIE = hpie(taxon = Family, count = Abundance))
+  Family_Abundance <- left_join(Family_Abundance, Family_HPIE, by = "Identifier")
+
+## Subset calculated columns  
+  cols3 <- Family_Abundance[,c(1,171:180)]
+  names(cols3)
+  
+  MultipleSite_HUC2_A <- left_join(MultipleSite_HUC2_A, cols3, by = c("GroupingVariable" = "Identifier"))
+  View(MultipleSite_HUC2_A)
+```
+
+### 'Family_Abundance'
+```{r}
+## Plot 'Family_TotalAbundance_NoNA' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = log(Family_TotalAbundance_NoNA))) +
+        geom_point(color = "black") +
+        ggtitle("Log-transformed Total Abundance (NoNA) over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,12.5))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Family_TotalAbundance_NoNA' 
+lm_Fa_Abun <- lm(data = MultipleSite_HUC2_A, formula = log(Family_TotalAbundance_NoNA) ~ CollectionYear)
+summary(lm_Fa_Abun)
+ggplotRegression(lm_Fa_Abun)
+
+lm1 <- lmer(data =MultipleSite_HUC2_A, log(Family_TotalAbundance_NoNA) ~ CollectionYear + (1|SiteNumber))
+summary(lm1)
+```
+
+### 'Family_Richness'
+```{r}
+## Plot 'Family_Richness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_Richness)) +
+        geom_point(color = "black") +
+        ggtitle("Richness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,40))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Family_Richness'
+lm_Fa_Richness <- lm(data = MultipleSite_HUC2_A, formula = Family_Richness ~ CollectionYear)
+summary(lm_Fa_Richness)
+ggplotRegression(lm_Fa_Richness)
+
+lm2 <- lmer(data =MultipleSite_HUC2_A, Family_Richness ~ CollectionYear + (1|SiteNumber))
+summary(lm2)
+```
+
+
+## Family Rarefaction
+```{r}
+## Function 'rarefy' gives the expected species richness in random subsamples of size sample from the community. If sample is a vector, rarefaction of all observations is performed for each sample size separately.
+  plot(Family_Abundance$Family_Richness, Family_Abundance$Family_Srare, xlab = "Observed No. of Family", ylab = "Rarefied No. of Family")
+  abline(0,1)
+  rarecurve(Family_Abundance[,3:170], step = 20, sample = raremax, col = "blue", cex = 0.5)
+  
+## Plot 'Family_Srare' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_Srare)) +
+        geom_point(color = "black") +
+        ggtitle("Srare over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,10))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Family_Srare'
+lm_Fa_Srare <- lm(data = MultipleSite_HUC2_A, formula = Family_Srare ~ CollectionYear)
+summary(lm_Fa_Srare)
+ggplotRegression(lm_Fa_Srare)
+
+lm_Fa_Srare_Site <- lmer(data =MultipleSite_HUC2_A, Family_Srare ~ CollectionYear + (1|SiteNumber))
+summary(lm_Fa_Srare_Site)
+```
+
+## Pielou's Evenness
+```{r}
+## Plot 'Family_ PilouEvenness' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_PilouEvenness)) +
+        geom_point(color = "black") +
+        ggtitle("Pielou Evenness over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Family_ PilouEvenness'
+lm_Fa_PE <- lm(data = MultipleSite_HUC2_A, formula = Family_PilouEvenness ~ CollectionYear)
+summary(lm_Fa_PE)
+ggplotRegression(lm_Fa_PE)
+
+lm_Fa_PE_Site <- lmer(data =MultipleSite_HUC2_A, Family_PilouEvenness ~ CollectionYear + (1|SiteNumber))
+summary(lm_Fa_PE_Site)
+
+```
+
+## Hurlbert's Probability of Interspecific Encounter (PIE)
+```{r}
+## Plot 'Family_HPIE' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_HPIE)) +
+        geom_point(color = "black") +
+        ggtitle("Hurlbert's PIE over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,1))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "bottom") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)  
+
+## Model 'Family_HPIE'
+lm_Fa_HPIE <- lm(data = MultipleSite_HUC2_A, formula = Family_HPIE ~ CollectionYear)
+summary(lm_Fa_HPIE)
+ggplotRegression(lm_Fa_HPIE)
+
+lm_Fa_HPIE_Site <- lmer(data = MultipleSite_HUC2_A, Family_HPIE ~ CollectionYear + (1|SiteNumber))
+summary(lm_Fa_HPIE_Site)
+
+```
+
+
+## 'Family_expShannonDiversity' 
+```{r}
+## Plot 'Family_expShannonDiversity' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_expShannonDiversity)) +
+        geom_point(color = "black") +
+        ggtitle("(exp)Shannon Diversity over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,20))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Family_expShannonDiversity'
+lm_Fa_expSD <- lm(data = MultipleSite_HUC2_A, formula = Family_expShannonDiversity ~ CollectionYear)
+summary(lm_Fa_expSD)
+ggplotRegression(lm_Fa_expSD)
+
+lm3 <- lmer(data = MultipleSite_HUC2_A, Family_expShannonDiversity ~ CollectionYear + (1|SiteNumber))
+summary(lm3)
+```
+
+### 'Family_InverseSimpsons'
+```{r}
+## Plot 'Family_InverseSimpsons' over Years across HUC2 Zones
+  ggplot(data = MultipleSite_HUC2_A, 
+        mapping = aes(x = CollectionYear, y = Family_InverseSimpsons)) +
+        geom_point(color = "black") +
+        ggtitle("Inverse Simpson Indeces over Years among USGS HUC2 Zones (Multiple Samples)") +
+        geom_smooth(method = 'lm', se = TRUE) +
+        coord_cartesian(ylim = c(0,12.5))+
+        stat_poly_eq(formula = y ~ x, aes(label =  paste(stat(eq.label), stat(rr.label), sep = "~~~~")), rr.digits = 2, coef.digits = 2, parse = TRUE, size = 2, label.x = "left", label.y = "top") +
+        facet_wrap_paginate(MultipleSite_HUC2_A$HUC2Names, nrow = 5, ncol = 4, drop = FALSE)
+
+## Model 'Family_InverseSimpson'
+lm_Fa_InvSimp <- lm(data = MultipleSite_HUC2_A, formula = Family_InverseSimpsons ~ CollectionYear)
+summary(lm_Fa_InvSimp)
+ggplotRegression(lm_Fa_InvSimp)
+
+lm4 <- lmer(data = MultipleSite_HUC2_A, Family_InverseSimpsons ~ CollectionYear + (1|SiteNumber))
+summary(lm4)
+```
+
+
+
+
+# **Data exploration**
+
+
+#### Given the large number of taxa entries in the dataset, as we increase in taxonomic resolution (i.e., Genus > Family > Order), we add more and more rows (identified taxa) to the dataset. To identify the groups of taxon that are not identified to lower levels (which may be lost to Genus-level analyses and driving Family- or Order-level analyses), we have created the following data tables for Orders with larger rows (taxon entries).
+
+```{r}
+## Families within the Diptera order
+Diptera <- MultipleSamples4 %>% filter(Order == "Diptera") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Diptera <- as.data.frame(Diptera)
+Diptera$PercentID <- Diptera$GenusEntries/Diptera$Total_GenusEntries * 100
+Diptera$PercentNA <- Diptera$NA_GenusEntries/Diptera$Total_GenusEntries * 100
+Diptera
+```
+
+```{r}
+## Families within the Ephemeroptera order
+Ephem <- MultipleSamples4 %>% filter(Order == "Ephemeroptera") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Ephem <- as.data.frame(Ephem)
+Ephem$PercentID <- Ephem$GenusEntries/Ephem$Total_GenusEntries * 100
+Ephem$PercentNA <- Ephem$NA_GenusEntries/Ephem$Total_GenusEntries * 100
+Ephem
+```
+
+```{r}
+## Families within the Odonata order
+Odonata <- MultipleSamples4 %>% filter(Order == "Odonata") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Odonata <- as.data.frame(Odonata)
+Odonata$PercentID <- Odonata$GenusEntries/Odonata$Total_GenusEntries * 100
+Odonata$PercentNA <- Odonata$NA_GenusEntries/Odonata$Total_GenusEntries * 100
+Odonata
+```
+
+```{r}
+## Families within the Plecoptera order
+Plecoptera <- MultipleSamples4 %>% filter(Order == "Plecoptera") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Plecoptera <- as.data.frame(Plecoptera)
+Plecoptera$PercentID <- Plecoptera$GenusEntries/Plecoptera$Total_GenusEntries * 100
+Plecoptera$PercentNA <- Plecoptera$NA_GenusEntries/Plecoptera$Total_GenusEntries * 100
+Plecoptera
+```
+
+```{r}
+## Families in the Trichoptera order
+Trichoptera <- MultipleSamples4 %>% filter(Order == "Trichoptera") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Trichoptera <- as.data.frame(Trichoptera)
+Trichoptera$PercentID <- Trichoptera$GenusEntries/Trichoptera$Total_GenusEntries * 100
+Trichoptera$PercentNA <- Trichoptera$NA_GenusEntries/Trichoptera$Total_GenusEntries * 100
+Trichoptera
+```
+
+```{r}
+## Families in the Tubificida orders
+Tubificida <- MultipleSamples4 %>% filter(Order == "Tubificida") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Tubificida <- as.data.frame(Tubificida)
+Tubificida$PercentID <- Tubificida$GenusEntries/Tubificida$Total_GenusEntries * 100
+Tubificida$PercentNA <- Tubificida$NA_GenusEntries/Tubificida$Total_GenusEntries * 100
+Tubificida
+```
+
+```{r}
+## Families within the Decapoda order
+Decapoda <- MultipleSamples4 %>% filter(Order == "Decapoda") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Decapoda <- as.data.frame(Decapoda)
+Decapoda$PercentID <- Decapoda$GenusEntries/Decapoda$Total_GenusEntries * 100
+Decapoda$PercentNA <- Decapoda$NA_GenusEntries/Decapoda$Total_GenusEntries * 100
+Decapoda
+```
+
+```{r, width}
+## Families within the Basommatophora order
+Basommatophora <- MultipleSamples4 %>% filter(Order == "Basommatophora") %>% group_by(Family) %>% summarize(GenusEntries = sum(Genus != ""), NA_GenusEntries = sum(Genus == ""), Total_GenusEntries = length(Genus))
+Basommatophora <- as.data.frame(Basommatophora)
+Basommatophora$PercentID <- Basommatophora$GenusEntries/Basommatophora$Total_GenusEntries * 100
+Basommatophora$PercentNA <- Basommatophora$NA_GenusEntries/Basommatophora$Total_GenusEntries * 100
+Basommatophora
+```
